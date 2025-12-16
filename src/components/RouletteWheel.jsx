@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
+import { selectWinner } from '../utils/winnerSelection';
 import './RouletteWheel.css';
+
+/**
+ * 참가자 배열을 랜덤하게 섞는 함수 (Fisher-Yates 알고리즘)
+ */
+const shuffleArray = (array) => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
 
 /**
  * 물리엔진을 활용한 돌림판 컴포넌트
@@ -16,10 +29,21 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
   const onSpinCompleteRef = useRef(onSpinComplete);
   const isSpinningRef = useRef(isSpinning);
   const [canvasSize, setCanvasSize] = useState(400);
+  
+  // 랜덤 배치된 참가자 배열 (state로 관리하여 participants 변경 시 자동 재배치)
+  const [shuffledParticipants, setShuffledParticipants] = useState(() => 
+    participants.length > 0 ? shuffleArray(participants) : []
+  );
 
-  // ref 업데이트
+  // ref 업데이트 및 참가자 랜덤 배치
   useEffect(() => {
     participantsRef.current = participants;
+    // 참가자가 변경되면 랜덤하게 섞기
+    if (participants.length > 0) {
+      setShuffledParticipants(shuffleArray(participants));
+    } else {
+      setShuffledParticipants([]);
+    }
   }, [participants]);
 
   useEffect(() => {
@@ -38,7 +62,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
     const radius = Math.min(canvas.width, canvas.height) * 0.4;
-    const sections = participantsRef.current.length;
+    const sections = shuffledParticipants.length;
     const anglePerSection = (Math.PI * 2) / sections;
 
     // 캔버스 클리어
@@ -89,7 +113,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      const name = participantsRef.current[i];
+      const name = shuffledParticipants[i];
       // 긴 이름은 자르기 (최대 10자)
       const displayName = name.length > 10 ? name.substring(0, 8) + '...' : name;
       
@@ -135,17 +159,11 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
       angularVelocityRef.current = 0;
       setIsSpinning(false);
       
-      // 당첨자 계산
-      const sections = participantsRef.current.length;
-      const anglePerSection = (Math.PI * 2) / sections;
-      const normalizedAngle = ((rotationRef.current % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      // 포인터가 위쪽(0도)을 가리키므로, 각도를 조정하여 올바른 섹션 찾기
-      const pointerAngle = (Math.PI * 2 - normalizedAngle) % (Math.PI * 2);
-      const sectionIndex = Math.floor(pointerAngle / anglePerSection);
-      const winnerIndex = sectionIndex % sections;
+      // 당첨자 계산 (투명하게 공개된 selectWinner 함수 사용)
+      const winner = selectWinner(shuffledParticipants, rotationRef.current);
       
       setTimeout(() => {
-        onSpinCompleteRef.current(participantsRef.current[winnerIndex]);
+        onSpinCompleteRef.current(winner);
       }, 500);
     } else if (isSpinningRef.current) {
       animationFrameRef.current = requestAnimationFrame(animate);
@@ -204,7 +222,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [participants.length, isSpinning, setIsSpinning, canvasSize]);
+  }, [participants.length, shuffledParticipants, isSpinning, setIsSpinning, canvasSize]);
 
   const handleSpin = () => {
     if (isSpinning || participants.length === 0) return;

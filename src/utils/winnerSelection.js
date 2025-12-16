@@ -9,23 +9,25 @@
  */
 
 /**
- * 참가자 배열에서 랜덤으로 한 명을 선택합니다.
+ * 돌림판의 회전 각도를 기반으로 당첨자를 선정합니다.
  * 
  * 알고리즘 설명:
- * 1. Math.random()을 사용하여 0 이상 1 미만의 랜덤 실수를 생성합니다.
- * 2. 참가자 배열의 길이를 곱하여 0 이상 배열 길이 미만의 실수를 만듭니다.
- * 3. Math.floor()를 사용하여 정수 인덱스로 변환합니다.
- * 4. 해당 인덱스의 참가자를 당첨자로 선택합니다.
+ * 1. 돌림판이 멈춘 회전 각도(rotationAngle)를 받습니다.
+ * 2. 참가자 수에 따라 각 섹션의 각도를 계산합니다 (2π / 섹션 수).
+ * 3. 회전 각도를 정규화하여 0 이상 2π 미만의 값으로 변환합니다.
+ * 4. 포인터가 위쪽(0도)을 가리키므로, 각도를 조정하여 올바른 섹션을 찾습니다.
+ * 5. 포인터 각도를 섹션 각도로 나누어 섹션 인덱스를 계산합니다.
+ * 6. 해당 인덱스의 참가자를 당첨자로 선택합니다.
  * 
- * 이 방법은 각 참가자가 동일한 확률로 선택되도록 보장합니다.
- * 시드값이나 예측 가능한 요소가 없으며, 브라우저의 암호학적으로 안전한
- * 랜덤 생성기를 사용합니다.
+ * 이 방법은 돌림판의 물리 시뮬레이션 결과를 기반으로 하며,
+ * 각 참가자가 동일한 크기의 섹션을 가지므로 공정한 선택을 보장합니다.
  * 
- * @param {string[]} participants - 참가자 이름 배열
+ * @param {string[]} participants - 참가자 이름 배열 (랜덤 배치된 순서)
+ * @param {number} rotationAngle - 돌림판의 회전 각도 (라디안)
  * @returns {string} 선택된 당첨자 이름
  * @throws {Error} 참가자가 없거나 빈 배열인 경우 에러 발생
  */
-export function selectWinner(participants) {
+export function selectWinner(participants, rotationAngle) {
   // 입력 검증
   if (!participants || participants.length === 0) {
     throw new Error('참가자가 없습니다. 최소 1명 이상의 참가자가 필요합니다.');
@@ -38,13 +40,27 @@ export function selectWinner(participants) {
     throw new Error('유효한 참가자가 없습니다.');
   }
 
-  // 랜덤 인덱스 생성
-  // Math.random()은 0 이상 1 미만의 값을 반환하므로,
-  // 배열 길이를 곱하고 floor를 취하면 0부터 (length-1)까지의 정수를 얻을 수 있습니다.
-  const randomIndex = Math.floor(Math.random() * uniqueParticipants.length);
+  // 각도 검증
+  if (typeof rotationAngle !== 'number' || isNaN(rotationAngle)) {
+    throw new Error('유효한 회전 각도가 필요합니다.');
+  }
+
+  // 섹션 수와 각 섹션의 각도 계산
+  const sections = uniqueParticipants.length;
+  const anglePerSection = (Math.PI * 2) / sections;
+  
+  // 회전 각도를 정규화 (0 이상 2π 미만)
+  const normalizedAngle = ((rotationAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  
+  // 포인터가 위쪽(0도)을 가리키므로, 각도를 조정하여 올바른 섹션 찾기
+  const pointerAngle = (Math.PI * 2 - normalizedAngle) % (Math.PI * 2);
+  
+  // 섹션 인덱스 계산
+  const sectionIndex = Math.floor(pointerAngle / anglePerSection);
+  const winnerIndex = sectionIndex % sections;
   
   // 선택된 당첨자 반환
-  return uniqueParticipants[randomIndex];
+  return uniqueParticipants[winnerIndex];
 }
 
 /**
