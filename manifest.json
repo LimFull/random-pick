@@ -1,0 +1,19 @@
+{
+  "name": "돌림판 당첨자 선정",
+  "short_name": "돌림판",
+  "description": "돌림판을 돌려 랜덤으로 당첨자를 선정하는 웹 애플리케이션",
+  "start_url": "/random-pick/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4a90e2",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/random-pick/icon-placeholder.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
