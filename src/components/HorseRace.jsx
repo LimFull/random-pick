@@ -438,7 +438,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       this.finishLine.setDepth(10); // 말(depth 50~)보다 낮게 설정하여 말이 결승선 위에 보이도록
 
       // 결승선 텍스트
-      this.add.text(width / 2, finishY + 20, '결승선', {
+      this.add.text(width / 2, finishY + 40, '결승선', {
         fontSize: '24px',
         color: '#FF0000',
         fontStyle: 'bold',
