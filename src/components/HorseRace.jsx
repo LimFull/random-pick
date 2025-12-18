@@ -35,11 +35,12 @@ export function HorseRace({ participants, onRaceComplete }) {
 
     preload() {
       // 말 스프라이트 이미지 로드 (tile000.png ~ tile011.png)
-      // Vite에서 public 폴더의 파일은 루트에서 제공됨
+      // Vite의 BASE_URL을 사용하여 GitHub Pages 서브 디렉토리 배포 지원
+      const baseUrl = import.meta.env.BASE_URL;
       for (let i = 0; i < 12; i++) {
         const num = String(i).padStart(3, '0');
-        // 절대 경로 사용 (Vite 개발 서버는 public 폴더를 루트에서 제공)
-        const imagePath = `/images/horse/tile${num}.png`;
+        // BASE_URL을 사용하여 상대 경로 구성 (프로덕션: /random-pick/, 개발: /)
+        const imagePath = `${baseUrl}images/horse/tile${num}.png`;
         console.log(`Loading image: ${imagePath}`); // 디버깅용
         
         // 이미지 로드 실패 시 에러 처리

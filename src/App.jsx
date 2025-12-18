@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ParticipantList } from './components/ParticipantList';
 import { RouletteWheel } from './components/RouletteWheel';
 import { HorseRace } from './components/HorseRace';
@@ -9,33 +9,39 @@ import './App.css';
 
 function App() {
   const [participantsRaw, setParticipantsRaw] = useLocalStorage('participants', []);
-  const [participants, setParticipants] = useState([]);
   const [winner, setWinner] = useState(null);
   const [rankings, setRankings] = useState([]); // 경마 순위 정보
   const [isSpinning, setIsSpinning] = useState(false);
   const [currentView, setCurrentView] = useState('participants'); // 'participants', 'roulette', or 'horseRace'
 
-  // 참가자 데이터 정규화 (문자열 배열 → 객체 배열)
-  useEffect(() => {
-    // participantsRaw 유효성 검사
-    const isValidParticipantsRaw = Array.isArray(participantsRaw) && 
+  // participantsRaw 유효성 검사
+  const isValidParticipantsRaw = useMemo(() => {
+    return Array.isArray(participantsRaw) && 
       participantsRaw.every(p => 
         typeof p === 'object' && 
         p !== null && 
         typeof p.name === 'string' && 
         typeof p.color === 'string'
       );
-    
-    // 유효하지 않으면 빈 배열로 초기화
-    if (!isValidParticipantsRaw) {
+  }, [participantsRaw]);
+
+  // 유효하지 않은 데이터 초기화 (한 번만 실행)
+  useEffect(() => {
+    if (!isValidParticipantsRaw && participantsRaw.length > 0) {
       setParticipantsRaw([]);
-      setParticipants([]);
-      return;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isValidParticipantsRaw, participantsRaw.length]);
+
+  // 참가자 데이터 정규화 (문자열 배열 → 객체 배열)
+  const participants = useMemo(() => {
+    // 유효하지 않으면 빈 배열 반환
+    if (!isValidParticipantsRaw) {
+      return [];
     }
     
-    const normalized = normalizeParticipants(participantsRaw);
-    setParticipants(normalized);
-  }, [participantsRaw, setParticipantsRaw]);
+    return normalizeParticipants(participantsRaw);
+  }, [participantsRaw, isValidParticipantsRaw]);
 
   const handleAddParticipant = (name) => {
     // 현재 정규화된 participants를 기준으로 색상 할당

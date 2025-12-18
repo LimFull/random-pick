@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 
 /**
  * 로컬 스토리지를 사용하는 커스텀 훅
@@ -22,19 +22,20 @@ export function useLocalStorage(key, initialValue) {
     }
   });
 
-  // 값을 설정하는 함수
-  const setValue = (value) => {
+  // 값을 설정하는 함수 (useCallback으로 메모이제이션하여 안정적인 참조 유지)
+  const setValue = useCallback((value) => {
     try {
-      // 함수인 경우 (예: setValue(prev => prev + 1))
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      // 상태 업데이트
-      setStoredValue(valueToStore);
-      // 로컬 스토리지에 저장
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      setStoredValue((currentValue) => {
+        // 함수인 경우 (예: setValue(prev => prev + 1))
+        const valueToStore = value instanceof Function ? value(currentValue) : value;
+        // 로컬 스토리지에 저장
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        return valueToStore;
+      });
     } catch (error) {
       console.error(`로컬 스토리지에 ${key} 저장 실패:`, error);
     }
-  };
+  }, [key]);
 
   return [storedValue, setValue];
 }
