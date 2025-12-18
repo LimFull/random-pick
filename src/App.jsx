@@ -17,9 +17,25 @@ function App() {
 
   // 참가자 데이터 정규화 (문자열 배열 → 객체 배열)
   useEffect(() => {
+    // participantsRaw 유효성 검사
+    const isValidParticipantsRaw = Array.isArray(participantsRaw) && 
+      participantsRaw.every(p => 
+        typeof p === 'object' && 
+        p !== null && 
+        typeof p.name === 'string' && 
+        typeof p.color === 'string'
+      );
+    
+    // 유효하지 않으면 빈 배열로 초기화
+    if (!isValidParticipantsRaw) {
+      setParticipantsRaw([]);
+      setParticipants([]);
+      return;
+    }
+    
     const normalized = normalizeParticipants(participantsRaw);
     setParticipants(normalized);
-  }, [participantsRaw]);
+  }, [participantsRaw, setParticipantsRaw]);
 
   const handleAddParticipant = (name) => {
     // 현재 정규화된 participants를 기준으로 색상 할당
