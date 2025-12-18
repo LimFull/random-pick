@@ -91,7 +91,6 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>🎯 돌림판 당첨자 선정</h1>
-        <p>참가자를 추가하고 돌림판을 돌려 당첨자를 선정하세요!</p>
       </header>
 
       {/* 탭 네비게이션 */}
