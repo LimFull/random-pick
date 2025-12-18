@@ -44,9 +44,15 @@ export function HorseRace({ participants, onRaceComplete }) {
         console.log(`Loading image: ${imagePath}`); // 디버깅용
         
         // 이미지 로드 실패 시 에러 처리
+        // 픽셀 아트 모드로 로드하여 선명도 유지
         this.load.image(`horse-tile-${i}`, imagePath);
         this.load.on(`filecomplete-image-horse-tile-${i}`, () => {
           console.log(`Image loaded: horse-tile-${i}`);
+          // 픽셀 아트 모드 설정으로 선명한 렌더링
+          const texture = this.textures.get(`horse-tile-${i}`);
+          if (texture) {
+            texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+          }
         });
         this.load.on(`loaderror`, (file) => {
           console.error(`Failed to load image: ${file.key} from ${file.src}`);
@@ -88,6 +94,10 @@ export function HorseRace({ participants, onRaceComplete }) {
       canvas.height = sourceImage.height;
       const ctx = canvas.getContext('2d', { alpha: true }); // 투명도 지원
 
+      // 픽셀 아트를 위한 이미지 스무딩 비활성화
+      ctx.imageSmoothingEnabled = false;
+      ctx.imageSmoothingQuality = 'low';
+
       // 캔버스를 투명하게 초기화
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -101,46 +111,70 @@ export function HorseRace({ participants, onRaceComplete }) {
       // 색상 값을 RGB로 변환
       const targetColor = this.hexToRgb(color);
 
-      // 각 픽셀을 순회하며 검정색 부분만 색상 변경
+      // 원본 데이터 백업 (가장자리 정리 단계에서 사용)
+      const width = canvas.width;
+      const height = canvas.height;
+      const originalData = new Uint8ClampedArray(data);
+
+      // 1단계: 밝은 배경만 먼저 투명 처리 (원본 이미지 기준)
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
         const a = data[i + 3];
 
+        // 투명한 픽셀은 건너뛰기
+        if (a === 0) continue;
+
+        const brightness = (r + g + b) / 3;
+        const maxChannel = Math.max(r, g, b);
+        const minChannel = Math.min(r, g, b);
+        const channelDiff = maxChannel - minChannel;
+
         // 흰색 또는 밝은 배경 감지 및 투명 처리
-        // RGB 값이 모두 높고 비슷한 경우 (흰색/밝은 회색)
-        const isBright = r > 200 && g > 200 && b > 200;
-        const isUniform = (Math.max(r, g, b) - Math.min(r, g, b)) < 30;
-        if (isBright && isUniform && a > 0) {
-          // 밝은 배경을 투명하게 만들기
+        // 밝기가 매우 높고 채널 간 차이가 작은 경우 (순수 흰색/밝은 회색 배경)
+        // 조건을 엄격하게 설정하여 검정색/회색 말은 보호
+        const isVeryBright = brightness > 220; // 매우 밝은 픽셀만
+        const isUniform = channelDiff < 30; // 채널 간 차이가 매우 작음 (회색/흰색)
+        
+        // 순수 흰색 배경만 투명 처리
+        if (isVeryBright && isUniform) {
+          data[i] = 0;
+          data[i + 1] = 0;
+          data[i + 2] = 0;
           data[i + 3] = 0; // alpha를 0으로 설정
-          continue;
         }
+      }
+
+      // 2단계: 검정색/회색 부분을 색상으로 변경 (모든 어두운 픽셀 처리)
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
 
         // 투명한 픽셀은 건너뛰기
         if (a === 0) continue;
 
-        // 검정색 감지: RGB 값이 모두 낮고 비슷한 경우 (회색/검정색)
+        const brightness = (r + g + b) / 3;
         const maxChannel = Math.max(r, g, b);
         const minChannel = Math.min(r, g, b);
-        const brightness = (r + g + b) / 3;
-        
-        // 검정색 또는 매우 어두운 회색 감지
-        // 조건: 밝기가 낮고, 채널 간 차이가 작음 (순수한 검정/회색)
-        const isBlack = brightness < 100 && (maxChannel - minChannel) < 30;
+        const channelDiff = maxChannel - minChannel;
 
-        if (isBlack) {
-          // 검정색 부분을 정확한 타겟 색상으로 변경
+        // 검정색 또는 회색 감지 (밝은 배경이 아닌 모든 어두운/중간 픽셀)
+        // 조건: 밝기가 낮거나 중간이고, 채널 간 차이가 작음 (검정/회색)
+        // 밝은 배경은 이미 1단계에서 처리되었으므로, 나머지는 모두 말의 일부로 간주
+        const isDarkOrGray = brightness < 200 && channelDiff < 50;
+
+        if (isDarkOrGray) {
+          // 검정색/회색 부분을 정확한 타겟 색상으로 변경
           // 타겟 색상의 RGB 비율을 유지하면서 원본의 밝기 정보만 적용
-          const originalBrightness = brightness; // 0~100 범위
+          const originalBrightness = brightness; // 0~200 범위
           
           // 타겟 색상의 밝기 계산
           const targetBrightness = (targetColor.r + targetColor.g + targetColor.b) / 3;
           
           // 원본 밝기를 타겟 색상에 적용
-          // 검정색(밝기 0)은 타겟 색상의 어두운 버전
-          // 회색(밝기 중간)은 타겟 색상의 밝은 버전
           if (originalBrightness < 15) {
             // 완전 검정색: 타겟 색상의 90% 밝기로 적용 (정확한 색상 유지)
             const ratio = 0.9;
@@ -148,13 +182,12 @@ export function HorseRace({ participants, onRaceComplete }) {
             data[i + 1] = Math.round(targetColor.g * ratio);
             data[i + 2] = Math.round(targetColor.b * ratio);
           } else {
-            // 어두운 회색: 원본 밝기 비율을 타겟 색상에 적용
-            // 원본 밝기(0~100)를 타겟 색상 밝기에 맞춰 조정
-            // 밝기 비율: (원본 밝기 / 100)을 사용하여 타겟 색상의 밝기 범위에 매핑
-            const brightnessRatio = originalBrightness / 100; // 0~1
+            // 회색: 원본 밝기 비율을 타겟 색상에 적용
+            // 원본 밝기(0~200)를 타겟 색상 밝기에 맞춰 조정
+            const brightnessRatio = Math.min(originalBrightness / 200, 1); // 0~1로 정규화
             
             // 타겟 색상의 밝기 범위를 유지하면서 원본 밝기 비율 적용
-            // 최소 75% ~ 최대 100% 밝기 범위 사용 (더 밝게)
+            // 최소 75% ~ 최대 100% 밝기 범위 사용
             const minBrightness = targetBrightness * 0.75; // 최소 75%
             const maxBrightness = targetBrightness; // 최대 100%
             const mappedBrightness = minBrightness + (brightnessRatio * (maxBrightness - minBrightness));
@@ -169,11 +202,134 @@ export function HorseRace({ participants, onRaceComplete }) {
         }
       }
 
+      // 3단계: 가장자리 정리 - 투명 픽셀 주변의 매우 밝은 픽셀만 제거 (색상이 적용된 말은 보호)
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const a = data[idx + 3];
+          
+          // 현재 픽셀이 투명하지 않은 경우
+          if (a > 0) {
+            // 원본 이미지의 밝기 확인 (색상 적용 전)
+            const origR = originalData[idx];
+            const origG = originalData[idx + 1];
+            const origB = originalData[idx + 2];
+            const origBrightness = (origR + origG + origB) / 3;
+            
+            // 원본이 매우 밝은 배경이었던 경우만 확인 (색상이 적용된 말은 제외)
+            if (origBrightness > 220) {
+              // 주변 픽셀 확인 (상하좌우)
+              let hasTransparentNeighbor = false;
+              const neighbors = [
+                { x: x - 1, y }, { x: x + 1, y },
+                { x, y: y - 1 }, { x, y: y + 1 }
+              ];
+              
+              for (const neighbor of neighbors) {
+                if (neighbor.x >= 0 && neighbor.x < width && neighbor.y >= 0 && neighbor.y < height) {
+                  const nIdx = (neighbor.y * width + neighbor.x) * 4;
+                  if (data[nIdx + 3] === 0) {
+                    hasTransparentNeighbor = true;
+                    break;
+                  }
+                }
+              }
+              
+              // 투명한 픽셀 옆에 있는 원본 밝은 픽셀만 제거 (흰색 테두리 제거)
+              // 색상이 적용된 말은 원본이 어두우므로 보호됨
+              if (hasTransparentNeighbor) {
+                data[idx] = 0;
+                data[idx + 1] = 0;
+                data[idx + 2] = 0;
+                data[idx + 3] = 0;
+              }
+            }
+          }
+        }
+      }
+
+      // 4단계: 외곽선 추가 - 색상이 있는 픽셀의 외곽에 검정색 선 그리기
+      const outlineWidth = 1; // 외곽선 굵기 (픽셀 단위)
+      
+      // 외곽선을 그릴 위치를 저장할 배열 (투명한 픽셀 위치에만 그리기)
+      const outlinePixels = new Set();
+      
+      // 색상이 있는 픽셀의 경계를 찾기
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const a = data[idx + 3];
+          
+          // 현재 픽셀이 색상이 있는 경우
+          if (a > 0) {
+            // 주변 4방향(상하좌우) 픽셀 확인
+            const neighbors = [
+              { x: x, y: y - 1 },   // 위
+              { x: x, y: y + 1 },   // 아래
+              { x: x - 1, y },      // 왼쪽
+              { x: x + 1, y }       // 오른쪽
+            ];
+            
+            // 주변에 투명한 픽셀이 있으면 외곽선 위치로 표시
+            for (const neighbor of neighbors) {
+              if (neighbor.x >= 0 && neighbor.x < width && neighbor.y >= 0 && neighbor.y < height) {
+                const nIdx = (neighbor.y * width + neighbor.x) * 4;
+                if (data[nIdx + 3] === 0) {
+                  // 외곽선을 그릴 위치 저장
+                  outlinePixels.add(`${neighbor.y},${neighbor.x}`);
+                  
+                  // 외곽선 굵기만큼 확장 (대각선 방향도 포함)
+                  if (outlineWidth > 1) {
+                    for (let dy = -outlineWidth + 1; dy < outlineWidth; dy++) {
+                      for (let dx = -outlineWidth + 1; dx < outlineWidth; dx++) {
+                        if (dx === 0 && dy === 0) continue; // 이미 추가됨
+                        const outlineX = neighbor.x + dx;
+                        const outlineY = neighbor.y + dy;
+                        if (outlineX >= 0 && outlineX < width && outlineY >= 0 && outlineY < height) {
+                          const dist = Math.sqrt(dx * dx + dy * dy);
+                          if (dist < outlineWidth) {
+                            outlinePixels.add(`${outlineY},${outlineX}`);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              } else {
+                // 이미지 경계 밖도 외곽선 위치로 표시
+                outlinePixels.add(`${neighbor.y},${neighbor.x}`);
+              }
+            }
+          }
+        }
+      }
+      
+      // 외곽선 그리기 (투명한 픽셀 위치에만 검정색으로 그리기)
+      for (const pixelKey of outlinePixels) {
+        const [y, x] = pixelKey.split(',').map(Number);
+        if (x >= 0 && x < width && y >= 0 && y < height) {
+          const idx = (y * width + x) * 4;
+          // 해당 위치가 투명한 경우에만 외곽선 그리기
+          if (data[idx + 3] === 0) {
+            data[idx] = 0;     // R (검정)
+            data[idx + 1] = 0; // G (검정)
+            data[idx + 2] = 0; // B (검정)
+            data[idx + 3] = 255; // A (불투명)
+          }
+        }
+      }
+
+
       // 수정된 이미지 데이터를 캔버스에 다시 그리기
       ctx.putImageData(imageData, 0, 0);
 
-      // Phaser 텍스처로 추가 (투명도 유지)
+      // Phaser 텍스처로 추가 (투명도 유지, 픽셀 아트 모드)
       this.textures.addCanvas(targetKey, canvas);
+      // 픽셀 아트 모드 설정으로 선명한 렌더링
+      const texture = this.textures.get(targetKey);
+      if (texture) {
+        texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
       
       // 텍스처가 제대로 생성되었는지 확인
       if (this.textures.exists(targetKey)) {
@@ -662,6 +818,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       height: gameHeight,
       parent: container,
       scene: HorseRaceScene,
+      pixelArt: true, // 픽셀 아트 모드 활성화 (이미지 선명도 유지)
       physics: {
         default: 'arcade',
         arcade: {
