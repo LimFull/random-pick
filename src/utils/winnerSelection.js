@@ -22,7 +22,7 @@
  * 이 방법은 돌림판의 물리 시뮬레이션 결과를 기반으로 하며,
  * 각 참가자가 동일한 크기의 섹션을 가지므로 공정한 선택을 보장합니다.
  * 
- * @param {string[]} participants - 참가자 이름 배열 (랜덤 배치된 순서)
+ * @param {string[] | {name: string, color: string}[]} participants - 참가자 배열 (랜덤 배치된 순서)
  * @param {number} rotationAngle - 돌림판의 회전 각도 (라디안)
  * @returns {string} 선택된 당첨자 이름
  * @throws {Error} 참가자가 없거나 빈 배열인 경우 에러 발생
@@ -33,8 +33,13 @@ export function selectWinner(participants, rotationAngle) {
     throw new Error('참가자가 없습니다. 최소 1명 이상의 참가자가 필요합니다.');
   }
 
+  // 참가자 이름 추출 (객체 배열인 경우)
+  const participantNames = participants.map(p => 
+    typeof p === 'string' ? p : p.name
+  );
+
   // 중복 제거 (같은 이름이 여러 번 입력된 경우)
-  const uniqueParticipants = [...new Set(participants)];
+  const uniqueParticipants = [...new Set(participantNames)];
   
   if (uniqueParticipants.length === 0) {
     throw new Error('유효한 참가자가 없습니다.');

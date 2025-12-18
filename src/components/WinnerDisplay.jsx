@@ -6,7 +6,7 @@ import './WinnerDisplay.css';
  * 당첨자 표시 컴포넌트
  * 폭죽 이펙트와 함께 당첨자를 화면에 표시합니다.
  */
-export function WinnerDisplay({ winner, onClose }) {
+export function WinnerDisplay({ winner, rankings = [], onClose }) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [windowSize, setWindowSize] = useState({
     width: window.innerWidth,
@@ -57,6 +57,16 @@ export function WinnerDisplay({ winner, onClose }) {
             <h1 className="winner-title">축하합니다!</h1>
             <div className="winner-name">{winner}</div>
             <p className="winner-message">당첨을 축하드립니다!</p>
+            {rankings.length > 0 && (
+              <div className="rankings-list">
+                {rankings.map((item, index) => (
+                  <div key={index} className="ranking-item">
+                    <span className="ranking-number">{item.rank}등</span>
+                    <span className="ranking-name">{item.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <button onClick={onClose} className="btn-close">
               닫기
             </button>

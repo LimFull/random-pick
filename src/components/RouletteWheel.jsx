@@ -24,7 +24,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
   const angularVelocityRef = useRef(0);
-  const frictionRef = useRef(0.98); // 마찰 계수
+  const frictionRef = useRef(0.99); // 마찰 계수
   const participantsRef = useRef(participants);
   const onSpinCompleteRef = useRef(onSpinComplete);
   const isSpinningRef = useRef(isSpinning);
@@ -79,8 +79,12 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
       const nextAngle = (i + 1) * anglePerSection - Math.PI / 2;
       const middleAngle = (angle + nextAngle) / 2;
 
-      // 섹션 색상 (교대로 변경)
-      ctx.fillStyle = i % 2 === 0 ? '#4a90e2' : '#6bb6ff';
+      // 섹션 색상 (참가자의 색상 사용)
+      const participant = shuffledParticipants[i];
+      const participantColor = typeof participant === 'object' && participant.color 
+        ? participant.color 
+        : (i % 2 === 0 ? '#4a90e2' : '#6bb6ff'); // 폴백 색상
+      ctx.fillStyle = participantColor;
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 2;
 
@@ -113,7 +117,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      const name = shuffledParticipants[i];
+      const name = typeof participant === 'string' ? participant : participant.name;
       // 긴 이름은 자르기 (최대 10자)
       const displayName = name.length > 10 ? name.substring(0, 8) + '...' : name;
       
@@ -229,7 +233,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
     
     setIsSpinning(true);
     // 랜덤한 각속도와 방향으로 회전
-    const spinPower = 0.15 + Math.random() * 0.1; // 0.15 ~ 0.25
+    const spinPower = 0.25 + Math.random() * 0.2; // 0.25 ~ 0.45
     const direction = Math.random() > 0.5 ? 1 : -1;
     angularVelocityRef.current = spinPower * direction;
     

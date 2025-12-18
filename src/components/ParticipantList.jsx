@@ -55,18 +55,29 @@ export function ParticipantList({ participants, onAdd, onRemove, onClear }) {
           <p className="empty-message">참가자가 없습니다. 위에서 추가해주세요.</p>
         ) : (
           <ul className="participant-ul">
-            {participants.map((name, index) => (
-              <li key={index} className="participant-item">
-                <span className="participant-name">{name}</span>
-                <button
-                  onClick={() => onRemove(index)}
-                  className="btn btn-remove"
-                  aria-label={`${name} 삭제`}
-                >
-                  삭제
-                </button>
-              </li>
-            ))}
+            {participants.map((participant, index) => {
+              const name = typeof participant === 'string' ? participant : participant.name;
+              const color = typeof participant === 'object' && participant.color ? participant.color : '#4a90e2';
+              return (
+                <li key={index} className="participant-item">
+                  <div className="participant-info">
+                    <span 
+                      className="participant-color-indicator" 
+                      style={{ backgroundColor: color }}
+                      aria-label={`${name}의 색상`}
+                    />
+                    <span className="participant-name">{name}</span>
+                  </div>
+                  <button
+                    onClick={() => onRemove(index)}
+                    className="btn btn-remove"
+                    aria-label={`${name} 삭제`}
+                  >
+                    삭제
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
