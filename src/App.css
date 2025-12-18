@@ -10,9 +10,10 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #000;
   min-height: 100vh;
   overflow-x: hidden;
+  /* 노치 영역은 검은색으로 유지하여 시스템 UI와 자연스럽게 통합 */
 }
 
 .app {
@@ -20,8 +21,13 @@ body {
   display: flex;
   flex-direction: column;
   padding: 0;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   max-width: 100%;
   margin: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .app-header {
@@ -120,8 +126,8 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   overflow: hidden;
 }
 
@@ -215,7 +221,17 @@ body {
   }
 
   .app-main.horse-race-view {
-    height: calc(100vh - 180px);
-    min-height: calc(100vh - 180px);
+    padding: 0;
+    overflow: visible;
+    height: auto;
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 180px);
+  }
+
+  /* 모바일에서 경마 뷰일 때 전체 페이지가 스크롤 가능하도록 */
+  .app-main.horse-race-view .horse-race-view-content {
+    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
   }
 }
