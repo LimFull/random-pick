@@ -132,12 +132,12 @@ export function HorseRace({ participants, onRaceComplete }) {
         const channelDiff = maxChannel - minChannel;
 
         // 흰색 또는 밝은 배경 감지 및 투명 처리
-        // 밝기가 매우 높고 채널 간 차이가 작은 경우 (순수 흰색/밝은 회색 배경)
-        // 조건을 엄격하게 설정하여 검정색/회색 말은 보호
-        const isVeryBright = brightness > 220; // 매우 밝은 픽셀만
-        const isUniform = channelDiff < 30; // 채널 간 차이가 매우 작음 (회색/흰색)
+        // 밝기가 높고 채널 간 차이가 작은 경우 (순수 흰색/밝은 회색 배경)
+        // 조건을 조정하여 더 많은 밝은 배경을 제거하되 검정색 말은 보호
+        const isVeryBright = brightness > 200; // 밝은 픽셀
+        const isUniform = channelDiff < 40; // 채널 간 차이가 작음 (회색/흰색)
         
-        // 순수 흰색 배경만 투명 처리
+        // 밝은 배경 투명 처리
         if (isVeryBright && isUniform) {
           data[i] = 0;
           data[i + 1] = 0;
@@ -164,12 +164,13 @@ export function HorseRace({ participants, onRaceComplete }) {
         // 검정색 또는 회색 감지 (밝은 배경이 아닌 모든 어두운/중간 픽셀)
         // 조건: 밝기가 낮거나 중간이고, 채널 간 차이가 작음 (검정/회색)
         // 밝은 배경은 이미 1단계에서 처리되었으므로, 나머지는 모두 말의 일부로 간주
-        const isDarkOrGray = brightness < 200 && channelDiff < 50;
+        // 모든 검정색 픽셀을 포함하도록 조건 완화
+        const isDarkOrGray = brightness < 220 && channelDiff < 60;
 
         if (isDarkOrGray) {
           // 검정색/회색 부분을 정확한 타겟 색상으로 변경
           // 타겟 색상의 RGB 비율을 유지하면서 원본의 밝기 정보만 적용
-          const originalBrightness = brightness; // 0~200 범위
+          const originalBrightness = brightness; // 0~220 범위
           
           // 타겟 색상의 밝기 계산
           const targetBrightness = (targetColor.r + targetColor.g + targetColor.b) / 3;
@@ -183,8 +184,8 @@ export function HorseRace({ participants, onRaceComplete }) {
             data[i + 2] = Math.round(targetColor.b * ratio);
           } else {
             // 회색: 원본 밝기 비율을 타겟 색상에 적용
-            // 원본 밝기(0~200)를 타겟 색상 밝기에 맞춰 조정
-            const brightnessRatio = Math.min(originalBrightness / 200, 1); // 0~1로 정규화
+            // 원본 밝기(0~220)를 타겟 색상 밝기에 맞춰 조정
+            const brightnessRatio = Math.min(originalBrightness / 220, 1); // 0~1로 정규화
             
             // 타겟 색상의 밝기 범위를 유지하면서 원본 밝기 비율 적용
             // 최소 75% ~ 최대 100% 밝기 범위 사용
@@ -199,10 +200,41 @@ export function HorseRace({ participants, onRaceComplete }) {
             data[i + 2] = Math.round(targetColor.b * colorRatio);
           }
           // alpha는 유지
+        } else {
+          // 검정색도 아니고 밝은 배경도 아닌 중간 픽셀들도 투명 처리
+          // (안티앨리어싱으로 인한 반투명 픽셀 제거)
+          if (brightness > 100 && brightness < 200) {
+            data[i] = 0;
+            data[i + 1] = 0;
+            data[i + 2] = 0;
+            data[i + 3] = 0;
+          }
         }
       }
 
-      // 3단계: 가장자리 정리 - 투명 픽셀 주변의 매우 밝은 픽셀만 제거 (색상이 적용된 말은 보호)
+      // 2.5단계: 남은 검정색 픽셀 처리 (모든 검정색 점 제거)
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        // 투명한 픽셀은 건너뛰기
+        if (a === 0) continue;
+
+        const brightness = (r + g + b) / 3;
+        
+        // 남은 검정색 픽셀 (밝기가 매우 낮고 색상이 거의 없는 경우)을 색상으로 변경
+        if (brightness < 50 && r < 50 && g < 50 && b < 50) {
+          // 검정색을 타겟 색상으로 변경
+          const ratio = 0.9;
+          data[i] = Math.round(targetColor.r * ratio);
+          data[i + 1] = Math.round(targetColor.g * ratio);
+          data[i + 2] = Math.round(targetColor.b * ratio);
+        }
+      }
+
+      // 3단계: 가장자리 정리 및 남은 검정색 점 제거
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const idx = (y * width + x) * 4;
@@ -210,14 +242,62 @@ export function HorseRace({ participants, onRaceComplete }) {
           
           // 현재 픽셀이 투명하지 않은 경우
           if (a > 0) {
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            const brightness = (r + g + b) / 3;
+            
             // 원본 이미지의 밝기 확인 (색상 적용 전)
             const origR = originalData[idx];
             const origG = originalData[idx + 1];
             const origB = originalData[idx + 2];
             const origBrightness = (origR + origG + origB) / 3;
             
+            // 남은 검정색 점 처리 (색상이 적용되지 않은 검정색 픽셀)
+            if (brightness < 50 && r < 50 && g < 50 && b < 50) {
+              // 주변에 색상이 있는 픽셀이 있는지 확인
+              let hasColoredNeighbor = false;
+              const neighbors = [
+                { x: x - 1, y }, { x: x + 1, y },
+                { x, y: y - 1 }, { x, y: y + 1 },
+                { x: x - 1, y: y - 1 }, { x: x + 1, y: y - 1 },
+                { x: x - 1, y: y + 1 }, { x: x + 1, y: y + 1 }
+              ];
+              
+              for (const neighbor of neighbors) {
+                if (neighbor.x >= 0 && neighbor.x < width && neighbor.y >= 0 && neighbor.y < height) {
+                  const nIdx = (neighbor.y * width + neighbor.x) * 4;
+                  if (data[nIdx + 3] > 0) {
+                    const nR = data[nIdx];
+                    const nG = data[nIdx + 1];
+                    const nB = data[nIdx + 2];
+                    const nBrightness = (nR + nG + nB) / 3;
+                    // 주변에 색상이 있는 픽셀이 있으면 검정색 점을 색상으로 변경
+                    if (nBrightness > 50) {
+                      hasColoredNeighbor = true;
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              // 색상이 있는 픽셀 옆에 있는 검정색 점을 색상으로 변경
+              if (hasColoredNeighbor) {
+                const ratio = 0.9;
+                data[idx] = Math.round(targetColor.r * ratio);
+                data[idx + 1] = Math.round(targetColor.g * ratio);
+                data[idx + 2] = Math.round(targetColor.b * ratio);
+              } else {
+                // 고립된 검정색 점은 투명 처리
+                data[idx] = 0;
+                data[idx + 1] = 0;
+                data[idx + 2] = 0;
+                data[idx + 3] = 0;
+              }
+            }
+            
             // 원본이 매우 밝은 배경이었던 경우만 확인 (색상이 적용된 말은 제외)
-            if (origBrightness > 220) {
+            if (origBrightness > 200) {
               // 주변 픽셀 확인 (상하좌우)
               let hasTransparentNeighbor = false;
               const neighbors = [
@@ -237,7 +317,7 @@ export function HorseRace({ participants, onRaceComplete }) {
               
               // 투명한 픽셀 옆에 있는 원본 밝은 픽셀만 제거 (흰색 테두리 제거)
               // 색상이 적용된 말은 원본이 어두우므로 보호됨
-              if (hasTransparentNeighbor) {
+              if (hasTransparentNeighbor && brightness > 150) {
                 data[idx] = 0;
                 data[idx + 1] = 0;
                 data[idx + 2] = 0;
