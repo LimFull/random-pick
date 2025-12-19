@@ -526,8 +526,8 @@ export function HorseRace({ participants, onRaceComplete }) {
 
       // 출발선 생성 (위쪽, 트랙 위에)
       this.startY = startY;
-      this.add.rectangle(trackLeft, this.startY, trackWidth, 10, 0x000000).setOrigin(0, 0).setDepth(5);
-      this.add.text(width / 2, this.startY - 20, '출발선', {
+      this.add.rectangle(trackLeft, this.startY + 120, trackWidth, 10, 0x000000).setOrigin(0, 0).setDepth(5);
+      this.add.text(width / 2, this.startY + 100, '출발선', {
         fontSize: '24px',
         color: '#000000',
         fontStyle: 'bold',
@@ -536,7 +536,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       // 말 생성 (트랙 위에 가로로 분산 배치, 위에서 시작)
       const horseSpacing = trackWidth / (this.participants.length + 1);
       this.horses = this.participants.map((participant, index) => {
-        const x = trackLeft + horseSpacing * (index + 1);
+        const x = trackLeft + 30 + horseSpacing * (index + 1);
         const name = typeof participant === 'string' ? participant : participant.name;
         const color = typeof participant === 'object' && participant.color ? participant.color : '#FF6B6B';
 
@@ -557,13 +557,13 @@ export function HorseRace({ participants, onRaceComplete }) {
           // 말을 아래쪽을 향하도록 회전 (90도)
           horse.setRotation(Math.PI / 2);
           // 왼쪽 말이 오른쪽 말보다 위에 보이도록 depth 설정 (인덱스가 작을수록 높은 depth)
-          // 결승선(depth 10)보다 위에 보이도록 depth 50 이상으로 설정
-          horse.setDepth(50 - index); // 왼쪽 말(인덱스 0)이 가장 높은 depth (50)
+          // 결승선(depth 10)보다 위에 보이도록 depth 500 이상으로 설정
+          horse.setDepth(500 - index); // 왼쪽 말(인덱스 0)이 가장 높은 depth (500)
         } else {
           // 이미지가 없으면 사각형으로 대체
           console.warn('Horse image not found, using rectangle placeholder');
           horse = this.add.rectangle(x, startY + 30, 60, 40, parseInt(color.replace('#', ''), 16));
-          horse.setDepth(50 - index); // 사각형도 동일한 depth 적용
+          horse.setDepth(500 - index); // 사각형도 동일한 depth 적용
         }
         horse.setOrigin(0.5, 0.5);
 
@@ -578,7 +578,7 @@ export function HorseRace({ participants, onRaceComplete }) {
         // 이름 텍스트도 말과 같은 방향으로 회전 (90도, 아래쪽 향함)
         nameText.setRotation(Math.PI / 2);
         // 이름 텍스트도 말과 같은 depth로 설정 (말 위에 표시되도록)
-        nameText.setDepth(50 - index + 0.1); // 말보다 약간 위에
+        nameText.setDepth(500 - index + 0.1); // 말보다 약간 위에
 
         // 애니메이션 생성 (색상이 적용된 텍스처 사용)
         const animKey = `horse-run-${index}`;
