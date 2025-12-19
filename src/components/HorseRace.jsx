@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import './HorseRace.css';
-import { mapRange } from '../utils/calc';
+import { mapRange, shuffleArray } from '../utils/calc';
 
 const TRACK_LENGTH_MULTIPLIER = 30;
 const HORSE_MIN_SPEED = 200;
@@ -32,6 +32,8 @@ export function HorseRace({ participants, onRaceComplete }) {
       this.trackLength = 0; // 트랙 전체 길이 저장
       this.finishOrder = []; // 결승선 통과 순서 저장
       this.finishTimer = null; // 완주 후 타이머
+      this.burningPotentialIndex = null;
+      this.firstLastDistance = 0;
     }
 
     preload() {
@@ -63,7 +65,9 @@ export function HorseRace({ participants, onRaceComplete }) {
 
     init(data) {
       if (data && data.participants) {
+        // random으로 섞는다
         this.participants = data.participants;
+        this.participants = shuffleArray(this.participants);
       }
       // 경주 초기화 시 순위 정보도 초기화
       this.finishOrder = [];
@@ -623,6 +627,8 @@ export function HorseRace({ participants, onRaceComplete }) {
         horse.index = index;
         horse.finishY = finishY; // 결승선 Y 위치 저장
         horse.finished = false; // 도착 여부 추적
+        horse.burning = false;
+        horse.index = index;
 
         return horse;
       });
@@ -640,7 +646,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       if (this.gameFinished || !this.raceStarted) return;
 
       const finishY = this.horses.length > 0 ? this.horses[0].finishY : this.cameras.main.height * 2.7;
-
+      
       // 각 말 업데이트
       this.horses.forEach((horse) => {
         // 속도 변경 타이머 업데이트
@@ -650,7 +656,19 @@ export function HorseRace({ participants, onRaceComplete }) {
           // 새로운 속도 설정 (1~5초 후 다시 변경)
           const minSpeed = HORSE_MIN_SPEED;
           const maxSpeed = HORSE_MAX_SPEED;
-          horse.targetSpeed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+
+          const isBurning = Math.random() < 0.01 && this.burningPotentialIndex === horse.index && this.firstLastDistance > 800;
+          if (isBurning) {
+            horse.burning = true;
+          } else {
+            horse.burning = false;
+          }
+
+          if (horse.burning) {
+            horse.targetSpeed = maxSpeed * 2;
+          } else {
+            horse.targetSpeed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+          }
           horse.speedChangeTimer = 1000 + Math.random() * 4000; // 1~5초
         }
 
@@ -681,7 +699,9 @@ export function HorseRace({ participants, onRaceComplete }) {
             // Phaser 3에서 애니메이션 속도 조절: sprite.anims.timeScale 사용
             // 이 방법은 스프라이트의 모든 애니메이션에 적용되며, 애니메이션이 재생 중일 때 작동함
             if (horse.anims.isPlaying) {
-              if (isBelowAverage) {
+              if (horse.burning) {
+                horse.anims.timeScale = 1.2;
+              } else if(isBelowAverage) {
                 horse.anims.timeScale = 0.15;
               } else {
                 horse.anims.timeScale = timeScale;
@@ -712,6 +732,15 @@ export function HorseRace({ participants, onRaceComplete }) {
           }
         }
       });
+
+      const firstHorse = this.horses.reduce((prev, curr) => 
+        curr.y > prev.y ? curr : prev
+      );
+      const lastHorse = this.horses.reduce((prev, curr) => 
+        curr.y < prev.y ? curr : prev
+      );
+      this.firstLastDistance = firstHorse.y - lastHorse.y;
+      this.burningPotentialIndex = lastHorse.index;
 
       // 모든 말이 도착했는지 확인
       const allFinished = this.horses.every(horse => horse.finished);
