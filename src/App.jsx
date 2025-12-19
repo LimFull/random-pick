@@ -65,6 +65,27 @@ function App() {
     }
   };
 
+  const handleShuffleColors = () => {
+    if (participants.length === 0) return;
+    
+    // 현재 참가자들의 색상을 수집
+    const colors = participants.map(p => p.color);
+    
+    // Fisher-Yates 알고리즘으로 색상 배열 섞기
+    for (let i = colors.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [colors[i], colors[j]] = [colors[j], colors[i]];
+    }
+    
+    // 섞인 색상을 참가자들에게 재할당
+    const shuffled = participants.map((p, index) => ({
+      name: p.name,
+      color: colors[index]
+    }));
+    
+    setParticipantsRaw(shuffled);
+  };
+
   const handleSpinComplete = (selectedParticipant) => {
     // 경마에서 온 경우: { winner, rankings } 객체
     // 돌림판에서 온 경우: 이름 문자열 또는 객체
@@ -125,6 +146,7 @@ function App() {
               onAdd={handleAddParticipant}
               onRemove={handleRemoveParticipant}
               onClear={handleClearParticipants}
+              onShuffle={handleShuffleColors}
             />
             {participants.length > 0 && (
               <div className="view-hint">

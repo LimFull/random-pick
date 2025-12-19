@@ -5,7 +5,7 @@ import './ParticipantList.css';
  * 참가 인원 관리 컴포넌트
  * 참가자를 추가하고 제거할 수 있는 기능을 제공합니다.
  */
-export function ParticipantList({ participants, onAdd, onRemove, onClear }) {
+export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuffle }) {
   const [inputValue, setInputValue] = useState('');
 
   const handleSubmit = (e) => {
@@ -44,6 +44,9 @@ export function ParticipantList({ participants, onAdd, onRemove, onClear }) {
 
       {participants.length > 0 && (
         <div className="participant-actions">
+          <button onClick={onShuffle} className="btn btn-shuffle">
+            색깔 섞기
+          </button>
           <button onClick={onClear} className="btn btn-clear">
             전체 삭제
           </button>
