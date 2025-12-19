@@ -584,8 +584,9 @@ export function HorseRace({ participants, onRaceComplete }: HorseRaceProps) {
         // 이미지가 로드되지 않았을 경우를 대비해 체크
         let horse: HorseSprite;
         if (this.textures.exists('horse-tile-0')) {
-          // 각 말마다 고유한 텍스처 키 생성
-          const coloredTextureKey = `horse-colored-${index}`;
+          // 각 말마다 고유한 텍스처 키 생성 (참가자 이름과 색상 기반)
+          // 색상 정보를 포함하여 같은 이름이라도 색상이 다르면 다른 텍스처 사용
+          const coloredTextureKey = `horse-colored-${name}-${color}`;
           
           // 색상이 적용된 텍스처가 없으면 생성
           if (!this.textures.exists(coloredTextureKey)) {
@@ -620,16 +621,16 @@ export function HorseRace({ participants, onRaceComplete }: HorseRaceProps) {
         // 이름 텍스트도 말과 같은 depth로 설정 (말 위에 표시되도록)
         nameText.setDepth(500 - index + 0.1); // 말보다 약간 위에
 
-        // 애니메이션 생성 (색상이 적용된 텍스처 사용)
-        const animKey = `horse-run-${index}`;
-        const coloredTextureKey = `horse-colored-${index}`;
+        // 애니메이션 생성 (색상이 적용된 텍스처 사용, 참가자 이름과 색상 기반)
+        const animKey = `horse-run-${name}-${color}`;
+        const coloredTextureKey = `horse-colored-${name}-${color}`;
         
         if (!this.anims.exists(animKey) && this.textures.exists('horse-tile-0')) {
           // 각 프레임에 대해 색상이 적용된 텍스처 생성
           const frameObjects: Phaser.Types.Animations.AnimationFrame[] = [];
           for (let i = 0; i < 12; i++) {
             const sourceKey = `horse-tile-${i}`;
-            const coloredFrameKey = `horse-colored-${index}-frame-${i}`;
+            const coloredFrameKey = `horse-colored-${name}-${color}-frame-${i}`;
             
             if (this.textures.exists(sourceKey)) {
               // 색상이 적용된 프레임 텍스처가 없으면 생성
@@ -837,8 +838,8 @@ export function HorseRace({ participants, onRaceComplete }: HorseRaceProps) {
         horse.targetSpeed = minSpeed + Math.random() * (maxSpeed - minSpeed);
         horse.speedChangeTimer = 1000 + Math.random() * 4000;
         
-        // 경주 시작 시 달리는 애니메이션 시작
-        const animKey = `horse-run-${index}`;
+        // 경주 시작 시 달리는 애니메이션 시작 (참가자 이름과 색상 기반)
+        const animKey = `horse-run-${horse.name}-${horse.color}`;
         if (this.anims.exists(animKey) && horse.play) {
           horse.play(animKey);
         }
