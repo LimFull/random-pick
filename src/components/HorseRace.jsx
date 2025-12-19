@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import './HorseRace.css';
+import { mapRange } from '../utils/calc';
 
 const TRACK_LENGTH_MULTIPLIER = 30;
 const HORSE_MIN_SPEED = 200;
@@ -604,7 +605,7 @@ export function HorseRace({ participants, onRaceComplete }) {
             this.anims.create({
               key: animKey,
               frames: frameObjects,
-              frameRate: 30,
+              frameRate: 60,
               repeat: -1,
             });
           }
@@ -622,10 +623,6 @@ export function HorseRace({ participants, onRaceComplete }) {
         horse.index = index;
         horse.finishY = finishY; // 결승선 Y 위치 저장
         horse.finished = false; // 도착 여부 추적
-        horse.slowAnimationCounter = 0; // 느린 애니메이션용 프레임 카운터
-        horse.currentSlowFrameIndex = 0; // 느린 애니메이션 모드에서의 현재 프레임 인덱스
-        horse.slowAnimationMode = false; // 느린 애니메이션 모드 여부
-        horse.frameRepeatCount = 0; // 현재 프레임 반복 횟수
 
         return horse;
       });
@@ -674,83 +671,23 @@ export function HorseRace({ participants, onRaceComplete }) {
           const averageSpeed = (HORSE_MIN_SPEED + HORSE_MAX_SPEED) / 2;
           const isBelowAverage = horse.speed < averageSpeed;
           
-          // 평균 속도 이하일 때: 각 프레임을 2번씩 노출
-          if (isBelowAverage) {
-            // 느린 애니메이션 모드로 전환
-            if (!horse.slowAnimationMode) {
-              horse.slowAnimationMode = true;
-              horse.anims.pause();
-              // 현재 프레임 인덱스 저장
-              const animKey = `horse-run-${horse.index}`;
-              if (this.anims.exists(animKey)) {
-                const anim = this.anims.get(animKey);
-                const progress = horse.anims.currentAnim.progress || 0;
-                horse.currentSlowFrameIndex = Math.floor(progress * anim.frames.length);
-                horse.frameRepeatCount = 0;
-              }
-            }
-            
-            // 프레임 카운터 증가
-            horse.slowAnimationCounter += delta;
-            const frameDisplayTime = (1000 / 30) * 2; // 30fps 기준, 각 프레임을 2번 표시 (약 66ms)
-            
-            if (horse.slowAnimationCounter >= frameDisplayTime) {
-              horse.slowAnimationCounter = 0;
-              horse.frameRepeatCount++;
-              
-              // 같은 프레임을 2번 표시한 후 다음 프레임으로 이동
-              if (horse.frameRepeatCount >= 2) {
-                horse.frameRepeatCount = 0;
-                const animKey = `horse-run-${horse.index}`;
-                if (this.anims.exists(animKey)) {
-                  const anim = this.anims.get(animKey);
-                  horse.currentSlowFrameIndex = (horse.currentSlowFrameIndex + 1) % anim.frames.length;
-                  
-                  // 현재 프레임의 텍스처 설정
-                  const currentFrame = anim.frames[horse.currentSlowFrameIndex];
-                  if (currentFrame && currentFrame.textureKey) {
-                    if (this.textures.exists(currentFrame.textureKey)) {
-                      horse.setTexture(currentFrame.textureKey);
-                    }
-                  }
-                }
-              } else {
-                // 같은 프레임을 다시 표시
-                const animKey = `horse-run-${horse.index}`;
-                if (this.anims.exists(animKey)) {
-                  const anim = this.anims.get(animKey);
-                  const currentFrame = anim.frames[horse.currentSlowFrameIndex];
-                  if (currentFrame && currentFrame.textureKey) {
-                    if (this.textures.exists(currentFrame.textureKey)) {
-                      horse.setTexture(currentFrame.textureKey);
-                    }
-                  }
-                }
-              }
-            }
-          } else {
-            // 평균 속도 이상일 때: 정상 애니메이션
-            if (horse.slowAnimationMode) {
-              horse.slowAnimationMode = false;
-              horse.slowAnimationCounter = 0;
-              horse.frameRepeatCount = 0;
-              const animKey = `horse-run-${horse.index}`;
-              if (this.anims.exists(animKey)) {
-                horse.anims.resume();
-                horse.anims.play(animKey);
-              }
-            }
-            
             // 비선형 매핑으로 속도 차이를 더 강조 (제곱 함수 사용)
             // 빠른 속도일 때 더 큰 timeScale을 적용
             const speedFactor = Math.pow(normalizedSpeed, 0.6); // 0.6 제곱으로 빠른 속도 더 강조
+
+            // timeScale 범위: 최소 0.25 (느릴 때) ~ 최대 0.5 (빠를 때)
+            const timeScale = 0.2 + mapRange(speedFactor, 0, 1, 0.05, 0.3);
             
-            // timeScale 범위: 최소 0.1 (매우 느릴 때) ~ 최대 6.0 (매우 빠를 때) - 더 큰 범위
-            const timeScale = 0.1 + (speedFactor * 5.9);
-            
-            // Phaser 3에서는 timeScale 속성을 직접 설정
-            horse.anims.currentAnim.timeScale = timeScale;
-          }
+            // Phaser 3에서 애니메이션 속도 조절: sprite.anims.timeScale 사용
+            // 이 방법은 스프라이트의 모든 애니메이션에 적용되며, 애니메이션이 재생 중일 때 작동함
+            if (horse.anims.isPlaying) {
+              if (isBelowAverage) {
+                horse.anims.timeScale = 0.15;
+              } else {
+                horse.anims.timeScale = timeScale;
+              }
+            }
+          // }
         }
 
         // 이름 텍스트 위치 업데이트 (말 위쪽에)
