@@ -1,8 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
+import App from './App.tsx'
 
-createRoot(document.getElementById('root')).render(
+createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
@@ -20,14 +20,16 @@ if ('serviceWorker' in navigator) {
         // Service Worker 업데이트 확인
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // 새 버전이 설치되었고, 현재 페이지가 제어되고 있으면
-              // 사용자에게 새로고침을 안내하거나 자동 새로고침
-              console.log('새 버전의 Service Worker가 설치되었습니다.');
-              window.location.reload();
-            }
-          });
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // 새 버전이 설치되었고, 현재 페이지가 제어되고 있으면
+                // 사용자에게 새로고침을 안내하거나 자동 새로고침
+                console.log('새 버전의 Service Worker가 설치되었습니다.');
+                window.location.reload();
+              }
+            });
+          }
         });
       })
       .catch((error) => {
@@ -44,4 +46,3 @@ if ('serviceWorker' in navigator) {
     }, 60000); // 1분마다 확인
   });
 }
-

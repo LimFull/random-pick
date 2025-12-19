@@ -3,10 +3,9 @@
  * 
  * 이 파일은 돌림판에서 당첨자를 선정하는 핵심 로직을 담고 있습니다.
  * 공정하고 투명한 랜덤 선택 알고리즘을 구현합니다.
- * 
- * @param {string[]} participants - 참가자 이름 배열
- * @returns {string} 선택된 당첨자 이름
  */
+
+import type { ParticipantInput } from '../types/participant';
 
 /**
  * 돌림판의 회전 각도를 기반으로 당첨자를 선정합니다.
@@ -22,12 +21,12 @@
  * 이 방법은 돌림판의 물리 시뮬레이션 결과를 기반으로 하며,
  * 각 참가자가 동일한 크기의 섹션을 가지므로 공정한 선택을 보장합니다.
  * 
- * @param {string[] | {name: string, color: string}[]} participants - 참가자 배열 (랜덤 배치된 순서)
- * @param {number} rotationAngle - 돌림판의 회전 각도 (라디안)
- * @returns {string} 선택된 당첨자 이름
+ * @param participants - 참가자 배열 (랜덤 배치된 순서)
+ * @param rotationAngle - 돌림판의 회전 각도 (라디안)
+ * @returns 선택된 당첨자 이름
  * @throws {Error} 참가자가 없거나 빈 배열인 경우 에러 발생
  */
-export function selectWinner(participants, rotationAngle) {
+export function selectWinner(participants: ParticipantInput[], rotationAngle: number): string {
   // 입력 검증
   if (!participants || participants.length === 0) {
     throw new Error('참가자가 없습니다. 최소 1명 이상의 참가자가 필요합니다.');
@@ -72,10 +71,10 @@ export function selectWinner(participants, rotationAngle) {
  * 참가자 배열의 각 인원에 대한 선택 확률을 계산합니다.
  * (디버깅 및 투명성 확인용)
  * 
- * @param {string[]} participants - 참가자 이름 배열
- * @returns {Object} 각 참가자의 선택 확률 (퍼센트)
+ * @param participants - 참가자 이름 배열
+ * @returns 각 참가자의 선택 확률 (퍼센트)
  */
-export function calculateProbabilities(participants) {
+export function calculateProbabilities(participants: string[]): Record<string, string> {
   if (!participants || participants.length === 0) {
     return {};
   }
@@ -83,11 +82,10 @@ export function calculateProbabilities(participants) {
   const uniqueParticipants = [...new Set(participants)];
   const probability = (1 / uniqueParticipants.length) * 100;
   
-  const result = {};
+  const result: Record<string, string> = {};
   uniqueParticipants.forEach(name => {
     result[name] = probability.toFixed(2) + '%';
   });
   
   return result;
 }
-

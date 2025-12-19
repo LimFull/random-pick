@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { selectWinner } from '../utils/winnerSelection';
 import './RouletteWheel.css';
+import type { Participant } from '../types/participant';
+import type { SpinCompleteResult } from '../types/game';
 
 /**
  * 참가자 배열을 랜덤하게 섞는 함수 (Fisher-Yates 알고리즘)
  */
-const shuffleArray = (array) => {
+const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -15,13 +17,23 @@ const shuffleArray = (array) => {
 };
 
 /**
+ * 돌림판 컴포넌트 Props
+ */
+interface RouletteWheelProps {
+  participants: Participant[];
+  onSpinComplete: (result: SpinCompleteResult) => void;
+  isSpinning: boolean;
+  setIsSpinning: (spinning: boolean) => void;
+}
+
+/**
  * 물리엔진을 활용한 돌림판 컴포넌트
  * Canvas 2D와 물리 시뮬레이션을 사용하여 리얼한 물리 효과를 구현합니다.
  */
-export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsSpinning }) {
-  const canvasRef = useRef(null);
-  const wrapperRef = useRef(null);
-  const animationFrameRef = useRef(null);
+export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsSpinning }: RouletteWheelProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const rotationRef = useRef(0);
   const angularVelocityRef = useRef(0);
   const frictionRef = useRef(0.99); // 마찰 계수
@@ -31,7 +43,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
   const [canvasSize, setCanvasSize] = useState(400);
   
   // 랜덤 배치된 참가자 배열 (state로 관리하여 participants 변경 시 자동 재배치)
-  const [shuffledParticipants, setShuffledParticipants] = useState(() => 
+  const [shuffledParticipants, setShuffledParticipants] = useState<Participant[]>(() => 
     participants.length > 0 ? shuffleArray(participants) : []
   );
 
@@ -55,7 +67,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
   }, [isSpinning]);
 
   // 돌림판 그리기 함수
-  const drawWheel = (ctx, rotation) => {
+  const drawWheel = (ctx: CanvasRenderingContext2D, rotation: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -81,9 +93,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
 
       // 섹션 색상 (참가자의 색상 사용)
       const participant = shuffledParticipants[i];
-      const participantColor = typeof participant === 'object' && participant.color 
-        ? participant.color 
-        : (i % 2 === 0 ? '#4a90e2' : '#6bb6ff'); // 폴백 색상
+      const participantColor = participant?.color || (i % 2 === 0 ? '#4a90e2' : '#6bb6ff'); // 폴백 색상
       ctx.fillStyle = participantColor;
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 2;
@@ -117,7 +127,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      const name = typeof participant === 'string' ? participant : participant.name;
+      const name = participant?.name || '';
       // 긴 이름은 자르기 (최대 10자)
       const displayName = name.length > 10 ? name.substring(0, 8) + '...' : name;
       
@@ -148,6 +158,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     
     // 각속도 적용
     rotationRef.current += angularVelocityRef.current;
@@ -200,7 +211,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
   useEffect(() => {
     if (!canvasRef.current || participants.length === 0) {
       // 참가자가 없으면 초기화
-      if (animationFrameRef.current) {
+      if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
       }
       return;
@@ -208,6 +219,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
     // Canvas 크기 설정
     canvas.width = canvasSize;
@@ -222,7 +234,7 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
     }
 
     return () => {
-      if (animationFrameRef.current) {
+      if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };

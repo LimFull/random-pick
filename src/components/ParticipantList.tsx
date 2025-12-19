@@ -1,14 +1,26 @@
 import { useState } from 'react';
 import './ParticipantList.css';
+import type { Participant } from '../types/participant';
+
+/**
+ * 참가 인원 관리 컴포넌트 Props
+ */
+interface ParticipantListProps {
+  participants: Participant[];
+  onAdd: (name: string) => void;
+  onRemove: (index: number) => void;
+  onClear: () => void;
+  onShuffle: () => void;
+}
 
 /**
  * 참가 인원 관리 컴포넌트
  * 참가자를 추가하고 제거할 수 있는 기능을 제공합니다.
  */
-export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuffle }) {
+export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuffle }: ParticipantListProps) {
   const [inputValue, setInputValue] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmedValue = inputValue.trim();
     if (trimmedValue) {
@@ -17,9 +29,9 @@ export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuf
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      handleSubmit(e);
+      handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
     }
   };
 
@@ -59,8 +71,8 @@ export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuf
         ) : (
           <ul className="participant-ul">
             {participants.map((participant, index) => {
-              const name = typeof participant === 'string' ? participant : participant.name;
-              const color = typeof participant === 'object' && participant.color ? participant.color : '#4a90e2';
+              const name = participant.name;
+              const color = participant.color || '#4a90e2';
               return (
                 <li key={index} className="participant-item">
                   <div className="participant-info">
@@ -93,4 +105,3 @@ export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuf
     </div>
   );
 }
-

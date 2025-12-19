@@ -6,13 +6,16 @@ import { WinnerDisplay } from './components/WinnerDisplay';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { normalizeParticipants, assignColorToNewParticipant } from './utils/colorAssignment';
 import './App.css';
+import type { Participant } from './types/participant';
+import type { ViewType } from './types/common';
+import type { SpinCompleteResult, RaceResult, Ranking } from './types/game';
 
 function App() {
-  const [participantsRaw, setParticipantsRaw] = useLocalStorage('participants', []);
-  const [winner, setWinner] = useState(null);
-  const [rankings, setRankings] = useState([]); // 경마 순위 정보
+  const [participantsRaw, setParticipantsRaw] = useLocalStorage<Array<{ name: string; color: string }>>('participants', []);
+  const [winner, setWinner] = useState<string | null>(null);
+  const [rankings, setRankings] = useState<Ranking[]>([]); // 경마 순위 정보
   const [isSpinning, setIsSpinning] = useState(false);
-  const [currentView, setCurrentView] = useState('participants'); // 'participants', 'roulette', or 'horseRace'
+  const [currentView, setCurrentView] = useState<ViewType>('participants'); // 'participants', 'roulette', or 'horseRace'
 
   // participantsRaw 유효성 검사
   const isValidParticipantsRaw = useMemo(() => {
@@ -43,7 +46,7 @@ function App() {
     return normalizeParticipants(participantsRaw);
   }, [participantsRaw, isValidParticipantsRaw]);
 
-  const handleAddParticipant = (name) => {
+  const handleAddParticipant = (name: string) => {
     // 현재 정규화된 participants를 기준으로 색상 할당
     const newColor = assignColorToNewParticipant(participants);
     const newParticipant = { name, color: newColor };
@@ -53,7 +56,7 @@ function App() {
     setParticipantsRaw(updated.map(p => ({ name: p.name, color: p.color })));
   };
 
-  const handleRemoveParticipant = (index) => {
+  const handleRemoveParticipant = (index: number) => {
     const updated = participants.filter((_, i) => i !== index);
     // 색상 정보를 유지하면서 저장
     setParticipantsRaw(updated.map((p) => ({ name: p.name, color: p.color })));
@@ -86,18 +89,19 @@ function App() {
     setParticipantsRaw(shuffled);
   };
 
-  const handleSpinComplete = (selectedParticipant) => {
+  const handleSpinComplete = (selectedParticipant: SpinCompleteResult) => {
     // 경마에서 온 경우: { winner, rankings } 객체
     // 돌림판에서 온 경우: 이름 문자열 또는 객체
-    if (typeof selectedParticipant === 'object' && selectedParticipant.winner) {
+    if (typeof selectedParticipant === 'object' && selectedParticipant !== null && 'winner' in selectedParticipant) {
       // 경마 결과
-      setWinner(selectedParticipant.winner);
-      setRankings(selectedParticipant.rankings || []);
+      const raceResult = selectedParticipant as RaceResult;
+      setWinner(raceResult.winner);
+      setRankings(raceResult.rankings || []);
     } else {
       // 돌림판 결과
       const winnerName = typeof selectedParticipant === 'string' 
         ? selectedParticipant 
-        : selectedParticipant.name || selectedParticipant;
+        : (selectedParticipant as Participant).name || String(selectedParticipant);
       setWinner(winnerName);
       setRankings([]);
     }

@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react';
 import Confetti from 'react-confetti';
 import './WinnerDisplay.css';
+import type { Ranking } from '../types/game';
+
+/**
+ * 당첨자 표시 컴포넌트 Props
+ */
+interface WinnerDisplayProps {
+  winner: string;
+  rankings?: Ranking[];
+  onClose: () => void;
+}
 
 /**
  * 당첨자 표시 컴포넌트
  * 폭죽 이펙트와 함께 당첨자를 화면에 표시합니다.
  */
-export function WinnerDisplay({ winner, rankings = [], onClose }) {
+export function WinnerDisplay({ winner, rankings = [], onClose }: WinnerDisplayProps) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [windowSize, setWindowSize] = useState({
     width: window.innerWidth,
@@ -76,4 +86,3 @@ export function WinnerDisplay({ winner, rankings = [], onClose }) {
     </>
   );
 }
-

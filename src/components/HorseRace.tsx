@@ -2,38 +2,72 @@ import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import './HorseRace.css';
 import { mapRange, shuffleArray } from '../utils/calc';
+import type { Participant } from '../types/participant';
+import type { RaceResult, GameState } from '../types/game';
 
 const TRACK_LENGTH_MULTIPLIER = 30;
 const HORSE_MIN_SPEED = 200;
 const HORSE_MAX_SPEED = 450;
 
 /**
+ * 말 객체에 추가된 속성
+ */
+interface HorseSprite extends Phaser.GameObjects.Sprite {
+  speed: number;
+  targetSpeed: number;
+  speedChangeTimer: number;
+  name: string;
+  color: string;
+  nameText?: Phaser.GameObjects.Text;
+  index: number;
+  finishY: number;
+  finished: boolean;
+  burning: boolean;
+}
+
+/**
+ * 경마 씬 데이터
+ */
+interface HorseRaceSceneData {
+  participants?: Participant[];
+}
+
+/**
+ * 경마 컴포넌트 Props
+ */
+interface HorseRaceProps {
+  participants: Participant[];
+  onRaceComplete: (result: RaceResult) => void;
+}
+
+/**
  * 경마 게임 컴포넌트
  * Phaser 3를 사용하여 벨트스크롤 방식의 경마 게임을 구현합니다.
  */
-export function HorseRace({ participants, onRaceComplete }) {
-  const gameRef = useRef(null);
-  const gameInstanceRef = useRef(null);
-  const [gameState, setGameState] = useState('idle'); // 'idle', 'racing', 'finished'
-  const containerRef = useRef(null);
+export function HorseRace({ participants, onRaceComplete }: HorseRaceProps) {
+  const gameRef = useRef<HTMLDivElement>(null);
+  const gameInstanceRef = useRef<Phaser.Game | null>(null);
+  const [gameState, setGameState] = useState<GameState>('idle'); // 'idle', 'racing', 'finished'
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 게임 씬 클래스
   class HorseRaceScene extends Phaser.Scene {
+    participants: Participant[] = [];
+    horses: HorseSprite[] = [];
+    finishLine: Phaser.GameObjects.Rectangle | null = null;
+    gameFinished = false;
+    winner: string | null = null;
+    onRaceComplete: ((result: RaceResult) => void) | null = null;
+    raceStarted = false;
+    startY = 0; // 출발선 Y 위치 저장
+    trackLength = 0; // 트랙 전체 길이 저장
+    finishOrder: Array<{ name: string; rank: number }> = []; // 결승선 통과 순서 저장
+    finishTimer: ReturnType<typeof setTimeout> | null = null; // 완주 후 타이머
+    burningPotentialIndex: number | null = null;
+    firstLastDistance = 0;
+
     constructor() {
       super({ key: 'HorseRaceScene' });
-      this.participants = [];
-      this.horses = [];
-      this.finishLine = null;
-      this.gameFinished = false;
-      this.winner = null;
-      this.onRaceComplete = null;
-      this.raceStarted = false;
-      this.startY = 0; // 출발선 Y 위치 저장
-      this.trackLength = 0; // 트랙 전체 길이 저장
-      this.finishOrder = []; // 결승선 통과 순서 저장
-      this.finishTimer = null; // 완주 후 타이머
-      this.burningPotentialIndex = null;
-      this.firstLastDistance = 0;
     }
 
     preload() {
@@ -57,13 +91,13 @@ export function HorseRace({ participants, onRaceComplete }) {
             texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
           }
         });
-        this.load.on(`loaderror`, (file) => {
+        this.load.on(`loaderror`, (file: Phaser.Loader.File) => {
           console.error(`Failed to load image: ${file.key} from ${file.src}`);
         });
       }
     }
 
-    init(data) {
+    init(data?: HorseRaceSceneData) {
       if (data && data.participants) {
         // random으로 섞는다
         this.participants = data.participants;
@@ -82,22 +116,23 @@ export function HorseRace({ participants, onRaceComplete }) {
 
     /**
      * 원본 이미지의 검정색 부분을 지정된 색상으로 변경한 텍스처 생성
-     * @param {string} sourceKey - 원본 텍스처 키
-     * @param {string} targetKey - 생성할 텍스처 키
-     * @param {string} color - 적용할 색상 (HEX 코드)
+     * @param sourceKey - 원본 텍스처 키
+     * @param targetKey - 생성할 텍스처 키
+     * @param color - 적용할 색상 (HEX 코드)
      */
-    createColoredHorseTexture(sourceKey, targetKey, color) {
+    createColoredHorseTexture(sourceKey: string, targetKey: string, color: string) {
       const sourceTexture = this.textures.get(sourceKey);
       if (!sourceTexture) {
         console.warn(`Source texture not found: ${sourceKey}`);
         return;
       }
 
-      const sourceImage = sourceTexture.getSourceImage();
+      const sourceImage = sourceTexture.getSourceImage() as HTMLImageElement;
       const canvas = document.createElement('canvas');
       canvas.width = sourceImage.width;
       canvas.height = sourceImage.height;
       const ctx = canvas.getContext('2d', { alpha: true }); // 투명도 지원
+      if (!ctx) return;
 
       // 픽셀 아트를 위한 이미지 스무딩 비활성화
       ctx.imageSmoothingEnabled = false;
@@ -337,7 +372,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       const outlineWidth = 1; // 외곽선 굵기 (픽셀 단위)
       
       // 외곽선을 그릴 위치를 저장할 배열 (투명한 픽셀 위치에만 그리기)
-      const outlinePixels = new Set();
+      const outlinePixels = new Set<string>();
       
       // 색상이 있는 픽셀의 경계를 찾기
       for (let y = 0; y < height; y++) {
@@ -424,10 +459,10 @@ export function HorseRace({ participants, onRaceComplete }) {
 
     /**
      * HEX 색상을 RGB로 변환
-     * @param {string} hex - HEX 색상 코드 (#RRGGBB)
-     * @returns {Object} {r, g, b}
+     * @param hex - HEX 색상 코드 (#RRGGBB)
+     * @returns {r, g, b}
      */
-    hexToRgb(hex) {
+    hexToRgb(hex: string): { r: number; g: number; b: number } {
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       return result ? {
         r: parseInt(result[1], 16),
@@ -542,12 +577,12 @@ export function HorseRace({ participants, onRaceComplete }) {
       const horseSpacing = trackWidth / (this.participants.length + 1);
       this.horses = this.participants.map((participant, index) => {
         const x = trackLeft + 30 + horseSpacing * (index + 1);
-        const name = typeof participant === 'string' ? participant : participant.name;
-        const color = typeof participant === 'object' && participant.color ? participant.color : '#FF6B6B';
+        const name = participant.name;
+        const color = participant.color || '#FF6B6B';
 
         // 말 스프라이트 생성 (첫 번째 프레임 사용)
         // 이미지가 로드되지 않았을 경우를 대비해 체크
-        let horse;
+        let horse: HorseSprite;
         if (this.textures.exists('horse-tile-0')) {
           // 각 말마다 고유한 텍스처 키 생성
           const coloredTextureKey = `horse-colored-${index}`;
@@ -557,7 +592,7 @@ export function HorseRace({ participants, onRaceComplete }) {
             this.createColoredHorseTexture('horse-tile-0', coloredTextureKey, color);
           }
           
-          horse = this.add.sprite(x, this.startY + 30, coloredTextureKey);
+          horse = this.add.sprite(x, this.startY + 30, coloredTextureKey) as HorseSprite;
           horse.setScale(2);
           // 말을 아래쪽을 향하도록 회전 (90도)
           horse.setRotation(Math.PI / 2);
@@ -567,7 +602,7 @@ export function HorseRace({ participants, onRaceComplete }) {
         } else {
           // 이미지가 없으면 사각형으로 대체
           console.warn('Horse image not found, using rectangle placeholder');
-          horse = this.add.rectangle(x, startY + 30, 60, 40, parseInt(color.replace('#', ''), 16));
+          horse = this.add.rectangle(x, startY + 30, 60, 40, parseInt(color.replace('#', ''), 16)) as unknown as HorseSprite;
           horse.setDepth(500 - index); // 사각형도 동일한 depth 적용
         }
         horse.setOrigin(0.5, 0.5);
@@ -591,7 +626,7 @@ export function HorseRace({ participants, onRaceComplete }) {
         
         if (!this.anims.exists(animKey) && this.textures.exists('horse-tile-0')) {
           // 각 프레임에 대해 색상이 적용된 텍스처 생성
-          const frameObjects = [];
+          const frameObjects: Phaser.Types.Animations.AnimationFrame[] = [];
           for (let i = 0; i < 12; i++) {
             const sourceKey = `horse-tile-${i}`;
             const coloredFrameKey = `horse-colored-${index}-frame-${i}`;
@@ -628,7 +663,6 @@ export function HorseRace({ participants, onRaceComplete }) {
         horse.finishY = finishY; // 결승선 Y 위치 저장
         horse.finished = false; // 도착 여부 추적
         horse.burning = false;
-        horse.index = index;
 
         return horse;
       });
@@ -642,7 +676,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       this.cameras.main.setScroll(0, initialScrollY);
     }
 
-    update(time, delta) {
+    update(time: number, delta: number) {
       if (this.gameFinished || !this.raceStarted) return;
 
       const finishY = this.horses.length > 0 ? this.horses[0].finishY : this.cameras.main.height * 2.7;
@@ -707,7 +741,6 @@ export function HorseRace({ participants, onRaceComplete }) {
                 horse.anims.timeScale = timeScale;
               }
             }
-          // }
         }
 
         // 이름 텍스트 위치 업데이트 (말 위쪽에)
@@ -750,7 +783,7 @@ export function HorseRace({ participants, onRaceComplete }) {
           this.gameFinished = true;
           
           // 우승자 및 순위 정보 콜백 호출
-          if (this.onRaceComplete) {
+          if (this.onRaceComplete && this.winner) {
             this.onRaceComplete({
               winner: this.winner,
               rankings: this.finishOrder
@@ -858,7 +891,7 @@ export function HorseRace({ participants, onRaceComplete }) {
       gameInstanceRef.current = null;
     }
 
-    const config = {
+    const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       width: gameWidth,
       height: gameHeight,
@@ -882,9 +915,9 @@ export function HorseRace({ participants, onRaceComplete }) {
     
     // 씬이 생성된 후 콜백 설정 (약간의 지연 후)
     setTimeout(() => {
-      const scene = game.scene.getScene('HorseRaceScene');
+      const scene = game.scene.getScene('HorseRaceScene') as HorseRaceScene;
       if (scene) {
-        scene.onRaceComplete = (winner) => {
+        scene.onRaceComplete = (winner: RaceResult) => {
           setGameState('finished');
           if (onRaceComplete) {
             onRaceComplete(winner);
@@ -926,7 +959,7 @@ export function HorseRace({ participants, onRaceComplete }) {
 
   const handleStartRace = () => {
     if (gameInstanceRef.current) {
-      const scene = gameInstanceRef.current.scene.getScene('HorseRaceScene');
+      const scene = gameInstanceRef.current.scene.getScene('HorseRaceScene') as HorseRaceScene;
       if (scene && gameState === 'idle') {
         // 먼저 스크롤 실행
         if (containerRef.current) {
@@ -950,7 +983,7 @@ export function HorseRace({ participants, onRaceComplete }) {
 
   const handleResetRace = () => {
     if (gameInstanceRef.current) {
-      const scene = gameInstanceRef.current.scene.getScene('HorseRaceScene');
+      const scene = gameInstanceRef.current.scene.getScene('HorseRaceScene') as HorseRaceScene;
       if (scene) {
         scene.scene.restart({ participants });
         setGameState('idle');
