@@ -695,13 +695,24 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         }
 
         // 패스 또는 드리블 결정
-        const nearbyOpponents = this.getNearbyOpponents(player, 60);
+        const nearbyOpponents = this.getNearbyOpponents(player, 70);
 
-        if (nearbyOpponents.length > 0 && Math.random() < 0.015) {
-          this.attemptPass(player);
-        } else {
-          this.dribble(player, delta);
+        if (nearbyOpponents.length > 0) {
+          // 드리블 시도 성향에 따른 패스 확률
+          // dribbleAttempt가 낮을수록 패스 확률 높음
+          // dribbleAttempt 0 = 60% 패스, dribbleAttempt 100 = 10% 패스
+          const passChance = 0.6 - (stats.dribbleAttempt / 100) * 0.5;
+
+          // 상대가 많을수록 패스 확률 증가
+          const opponentMultiplier = 1 + (nearbyOpponents.length - 1) * 0.3;
+
+          if (Math.random() < passChance * opponentMultiplier * 0.05) {
+            this.attemptPass(player);
+            return;
+          }
         }
+
+        this.dribble(player, delta);
       }
 
       attemptKickoffPass(player: PlayerSprite) {
@@ -1330,19 +1341,48 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
       findBestPassTarget(player: PlayerSprite, teammates: PlayerSprite[]): PlayerSprite | null {
         const goalY = player.team === 'red' ? this.fieldHeight : 0;
 
-        // 골대에 더 가까운 팀원을 우선
-        const sortedTeammates = [...teammates].sort((a, b) => {
-          const distA = Math.abs(a.y - goalY);
-          const distB = Math.abs(b.y - goalY);
-          return distA - distB;
-        });
-
         // 너무 가까운 선수는 제외
-        const validTargets = sortedTeammates.filter(t =>
+        const validTargets = teammates.filter(t =>
           Phaser.Math.Distance.Between(player.x, player.y, t.x, t.y) > 40
         );
 
-        return validTargets[0] || null;
+        if (validTargets.length === 0) return null;
+
+        // 각 팀원에게 점수 부여 (상대 골대에 가까울수록 높은 점수)
+        const scoredTargets = validTargets.map(target => {
+          const distToGoal = Math.abs(target.y - goalY);
+          const maxDist = this.fieldHeight;
+
+          // 골대에 가까울수록 높은 점수 (0~1 범위)
+          const goalProximityScore = 1 - (distToGoal / maxDist);
+
+          // 패스 거리 점수 (너무 멀면 감점)
+          const passDist = Phaser.Math.Distance.Between(player.x, player.y, target.x, target.y);
+          const passDistScore = Math.max(0, 1 - (passDist / (this.fieldWidth * 0.8)));
+
+          // 상대 골대 근접성에 더 높은 가중치
+          const totalScore = goalProximityScore * 2 + passDistScore;
+
+          return { target, score: totalScore };
+        });
+
+        // 점수 기반 확률적 선택
+        const totalScore = scoredTargets.reduce((sum, t) => sum + t.score, 0);
+
+        if (totalScore <= 0) {
+          return validTargets[0];
+        }
+
+        // 가중치 랜덤 선택
+        let random = Math.random() * totalScore;
+        for (const { target, score } of scoredTargets) {
+          random -= score;
+          if (random <= 0) {
+            return target;
+          }
+        }
+
+        return scoredTargets[0].target;
       }
 
       getPlayersInPath(from: PlayerSprite, to: PlayerSprite): PlayerSprite[] {

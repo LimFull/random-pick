@@ -17,6 +17,7 @@ export interface PlayerStats {
   shootingPower: number;       // 슈팅 파워 (0-100)
   longShotFrequency: number;   // 롱슛 빈도 (0-100)
   dribbleSpeed: number;        // 드리블 속도 (0-100)
+  dribbleAttempt: number;      // 드리블 시도 성향 (0-100, 높을수록 드리블 선호)
   strength: number;            // 힘 (0-100)
   defense: number;             // 수비력 (0-100)
   speed: number;               // 이동 속도 (0-100)
@@ -83,6 +84,7 @@ export function generateRandomStats(): PlayerStats {
     shootingPower: Math.floor(Math.random() * 101),
     longShotFrequency: Math.floor(Math.random() * 101),
     dribbleSpeed: Math.floor(Math.random() * 101),
+    dribbleAttempt: Math.floor(Math.random() * 101),
     strength: Math.floor(Math.random() * 101),
     defense: Math.floor(Math.random() * 101),
     speed: Math.floor(Math.random() * 61) + 40, // 최소 40

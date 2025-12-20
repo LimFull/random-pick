@@ -27,7 +27,7 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
   const [matchDuration, setMatchDuration] = useState(1);
 
   // AI 골키퍼 사용 여부
-  const [useAIGoalkeeper, setUseAIGoalkeeper] = useState(false);
+  const [useAIGoalkeeper, setUseAIGoalkeeper] = useState(true);
 
   // 게임 설정
   const [soccerSetup, setSoccerSetup] = useState<SoccerSetup | null>(null);
@@ -96,6 +96,7 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
           shootingPower: 40,
           longShotFrequency: 10,
           dribbleSpeed: 20,
+          dribbleAttempt: 10,
           strength: 70,
           defense: 90,
           speed: 60,
@@ -113,6 +114,7 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
           shootingPower: 40,
           longShotFrequency: 10,
           dribbleSpeed: 20,
+          dribbleAttempt: 10,
           strength: 70,
           defense: 90,
           speed: 60,
