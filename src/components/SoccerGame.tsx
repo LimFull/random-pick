@@ -21,6 +21,8 @@ interface PlayerSprite extends Phaser.Physics.Arcade.Sprite {
   tackleCooldown: number; // 태클 쿨다운 (밀리초)
   stunTime: number; // 스턴 시간 - 이 시간 동안 AI 이동 불가
   ballAcquireCooldown: number; // 공 획득 쿨다운 - 패스/슈팅 후 바로 다시 공을 잡지 못하도록
+  dribbleTarget: { x: number; y: number } | null; // 드리블 목표 위치 (방향 유지용)
+  dribbleTargetTime: number; // 드리블 목표 유지 시간
 }
 
 interface BallSprite extends Phaser.Physics.Arcade.Sprite {
@@ -321,6 +323,8 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         player.tackleCooldown = 0;
         player.stunTime = 0;
         player.ballAcquireCooldown = 0;
+        player.dribbleTarget = null;
+        player.dribbleTargetTime = 0;
 
         // 역할 할당
         const teamPlayers = this.players.filter(p => p.team === playerData.team);
@@ -1294,16 +1298,67 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
       dribble(player: PlayerSprite, delta: number) {
         const stats = player.playerData.stats;
         const goalY = player.team === 'red' ? this.fieldHeight : 0;
-
-        // 골대 방향으로 드리블
-        const angle = Phaser.Math.Angle.Between(player.x, player.y, player.x, goalY);
         const speed = stats.dribbleSpeed * 1.5;
 
-        // 약간의 좌우 움직임 추가
-        const sideMove = Math.sin(this.time.now / 500) * 20;
+        // 드리블 목표 유지 시간 감소
+        player.dribbleTargetTime -= delta;
+
+        // 목표가 없거나 시간이 만료되면 새로운 목표 설정
+        if (!player.dribbleTarget || player.dribbleTargetTime <= 0) {
+          // 주변 상대 선수 확인
+          const nearbyOpponents = this.players.filter(p =>
+            p.team !== player.team &&
+            !p.playerData.isGoalkeeper &&
+            Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y) < 100
+          );
+
+          let targetX = player.x;
+          let targetY = goalY;
+
+          // 상대가 있으면 피할지 돌파할지 결정
+          if (nearbyOpponents.length > 0) {
+            // breakthroughAttempt가 높을수록 직진 확률 높음
+            const goStraightChance = stats.breakthroughAttempt / 100;
+
+            if (Math.random() > goStraightChance) {
+              // 상대를 피해서 드리블
+              let avoidX = 0;
+              let avoidY = 0;
+
+              nearbyOpponents.forEach(opponent => {
+                const dx = player.x - opponent.x;
+                const dy = player.y - opponent.y;
+                const dist = Math.max(Phaser.Math.Distance.Between(player.x, player.y, opponent.x, opponent.y), 1);
+
+                // 상대에게서 멀어지는 방향으로 가중치 (가까울수록 강하게)
+                const weight = (100 - dist) / 100;
+                avoidX += (dx / dist) * weight * 80;
+                avoidY += (dy / dist) * weight * 40; // Y축은 덜 회피 (골대 방향 유지)
+              });
+
+              // 피하는 방향 적용 (경기장 범위 내로 제한)
+              targetX = Phaser.Math.Clamp(player.x + avoidX, 50, this.fieldWidth - 50);
+
+              // 골대 방향으로 약간 전진하면서 피하기
+              const goalDirection = player.team === 'red' ? 1 : -1;
+              targetY = player.y + (goalDirection * 60) + avoidY;
+            }
+          }
+
+          // 새 목표 설정 및 유지 시간 (300~500ms)
+          player.dribbleTarget = { x: targetX, y: targetY };
+          player.dribbleTargetTime = 300 + Math.random() * 200;
+        }
+
+        // 캐시된 목표로 드리블
+        const targetX = player.dribbleTarget.x;
+        const targetY = player.dribbleTarget.y;
+
+        // 드리블 방향 계산
+        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
 
         player.setVelocity(
-          sideMove,
+          Math.cos(angle) * speed,
           Math.sin(angle) * speed
         );
         player.facingAngle = angle;
