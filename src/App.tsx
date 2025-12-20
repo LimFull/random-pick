@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ParticipantList } from './components/ParticipantList';
 import { RouletteWheel } from './components/RouletteWheel';
 import { HorseRace } from './components/HorseRace';
+import { SoccerTeamSetup } from './components/SoccerTeamSetup';
 import { WinnerDisplay } from './components/WinnerDisplay';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { normalizeParticipants, assignColorToNewParticipant } from './utils/colorAssignment';
@@ -9,6 +10,7 @@ import './App.css';
 import type { Participant } from './types/participant';
 import type { ViewType } from './types/common';
 import type { SpinCompleteResult, RaceResult, Ranking } from './types/game';
+import type { SoccerResult } from './types/soccer';
 
 function App() {
   const [participantsRaw, setParticipantsRaw] = useLocalStorage<Array<{ name: string; color: string }>>('participants', []);
@@ -140,9 +142,16 @@ function App() {
         >
           🐎 경마
         </button>
+        <button
+          className={`nav-button ${currentView === 'soccer' ? 'active' : ''}`}
+          onClick={() => setCurrentView('soccer')}
+          disabled={participants.length < 2}
+        >
+          ⚽ 축구
+        </button>
       </nav>
 
-      <main className={`app-main ${currentView === 'roulette' ? 'roulette-view' : ''} ${currentView === 'horseRace' ? 'horse-race-view' : ''}`}>
+      <main className={`app-main ${currentView === 'roulette' ? 'roulette-view' : ''} ${currentView === 'horseRace' ? 'horse-race-view' : ''} ${currentView === 'soccer' ? 'soccer-view' : ''}`}>
         {currentView === 'participants' && (
           <div className="participants-view">
             <ParticipantList
@@ -195,6 +204,27 @@ function App() {
             ) : (
               <div className="empty-state">
                 <p>⚠️ 참가자가 없습니다.</p>
+                <p>먼저 "참가 인원 관리" 탭에서 참가자를 추가해주세요.</p>
+                <button
+                  className="btn-go-to-participants"
+                  onClick={() => setCurrentView('participants')}
+                >
+                  참가 인원 관리로 이동
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {currentView === 'soccer' && (
+          <div className="soccer-view-content">
+            {participants.length >= 2 ? (
+              <SoccerTeamSetup
+                participants={participants}
+              />
+            ) : (
+              <div className="empty-state">
+                <p>⚠️ 참가자가 2명 이상 필요합니다.</p>
                 <p>먼저 "참가 인원 관리" 탭에서 참가자를 추가해주세요.</p>
                 <button
                   className="btn-go-to-participants"

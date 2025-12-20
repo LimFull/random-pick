@@ -103,6 +103,14 @@ body {
   position: relative;
 }
 
+.app-main.soccer-view {
+  padding: 0;
+  overflow: hidden;
+  height: calc(100vh - 200px);
+  min-height: calc(100vh - 200px);
+  position: relative;
+}
+
 .participants-view {
   width: 100%;
   max-width: 800px;
@@ -122,6 +130,16 @@ body {
 }
 
 .horse-race-view-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.soccer-view-content {
   width: 100%;
   height: 100%;
   display: flex;
@@ -229,6 +247,20 @@ body {
 
   /* 모바일에서 경마 뷰일 때 전체 페이지가 스크롤 가능하도록 */
   .app-main.horse-race-view .horse-race-view-content {
+    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-main.soccer-view {
+    padding: 0;
+    overflow: visible;
+    height: auto;
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 180px);
+  }
+
+  .app-main.soccer-view .soccer-view-content {
     height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     display: flex;

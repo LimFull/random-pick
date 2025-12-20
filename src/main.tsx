@@ -8,8 +8,18 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-// Service Worker 등록
-if ('serviceWorker' in navigator) {
+// 개발 모드에서는 Service Worker 해제
+if ('serviceWorker' in navigator && import.meta.env.DEV) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => {
+      registration.unregister();
+      console.log('Service Worker 해제됨 (개발 모드)');
+    });
+  });
+}
+
+// Service Worker 등록 (프로덕션에서만)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     const baseUrl = import.meta.env.BASE_URL;
     navigator.serviceWorker

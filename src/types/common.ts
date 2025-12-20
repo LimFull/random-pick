@@ -5,4 +5,4 @@
 /**
  * 뷰 타입
  */
-export type ViewType = 'participants' | 'roulette' | 'horseRace';
+export type ViewType = 'participants' | 'roulette' | 'horseRace' | 'soccer';
