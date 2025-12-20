@@ -24,6 +24,7 @@ export interface PlayerStats {
   speed: number;               // 이동 속도 (0-100)
   positioning: number;         // 위치 선정 (0-100)
   defensiveAggression: number; // 수비 적극성 (0-100, 높을수록 적극적으로 공 뺏으러 감)
+  vision: number;              // 시야 (0-100, 높을수록 크로스/컷백 시도 확률 높음)
 }
 
 /**
@@ -93,5 +94,6 @@ export function generateRandomStats(): PlayerStats {
     speed: Math.floor(Math.random() * 61) + 40, // 최소 40
     positioning: Math.floor(Math.random() * 61) + 40, // 최소 40
     defensiveAggression: Math.floor(Math.random() * 101),
+    vision: Math.floor(Math.random() * 101),
   };
 }

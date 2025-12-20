@@ -698,8 +698,28 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           return;
         }
 
-        // 슈팅 가능한 거리인지 확인
+        // 상대 진영 코너 지역에서 크로스/컷백 시도
         const goalY = player.team === 'red' ? this.fieldHeight : 0;
+        const cornerZoneY = player.team === 'red'
+          ? this.fieldHeight * 0.85  // red팀: 아래쪽 15% 영역
+          : this.fieldHeight * 0.15; // blue팀: 위쪽 15% 영역
+        const isInCornerZoneY = player.team === 'red'
+          ? player.y > cornerZoneY
+          : player.y < cornerZoneY;
+        const cornerZoneX = 80; // 측면 80px 이내
+        const isInCornerZoneX = player.x < cornerZoneX || player.x > this.fieldWidth - cornerZoneX;
+
+        if (isInCornerZoneY && isInCornerZoneX) {
+          // 시야 능력치에 따른 크로스/컷백 시도 확률 (vision 0 = 10%, vision 100 = 60%)
+          const crossCutbackChance = 0.1 + (stats.vision / 100) * 0.5;
+
+          if (Math.random() < crossCutbackChance * 0.1) { // 프레임당 확률 조정
+            this.attemptCrossOrCutback(player);
+            return;
+          }
+        }
+
+        // 슈팅 가능한 거리인지 확인
         const distanceToGoal = Math.abs(player.y - goalY);
 
         // 중거리슛 시도
@@ -1663,6 +1683,141 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           Math.cos(angle) * power,
           Math.sin(angle) * power
         );
+      }
+
+      attemptCrossOrCutback(player: PlayerSprite) {
+        if (!this.ball) return;
+
+        const stats = player.playerData.stats;
+        const goalY = player.team === 'red' ? this.fieldHeight : 0;
+        const goalCenterX = this.fieldWidth / 2;
+        const penaltyAreaY = player.team === 'red'
+          ? this.fieldHeight - 80  // 페널티 박스 Y
+          : 80;
+
+        // 팀원 중 패널티 에어리어 근처에 있는 선수 찾기
+        const teammates = this.players.filter(p =>
+          p.team === player.team &&
+          p !== player &&
+          !p.playerData.isGoalkeeper
+        );
+
+        // 컷백 대상: 플레이어 뒤쪽에 있는 팀원 (골대 반대 방향)
+        const cutbackTargets = teammates.filter(t => {
+          const isBehind = player.team === 'red'
+            ? t.y < player.y - 30  // red팀: 위쪽에 있는 선수
+            : t.y > player.y + 30; // blue팀: 아래쪽에 있는 선수
+          const isNearCenter = Math.abs(t.x - goalCenterX) < this.fieldWidth * 0.35;
+          return isBehind && isNearCenter;
+        });
+
+        // 크로스 대상: 페널티 에어리어 근처에 있는 팀원
+        const crossTargets = teammates.filter(t => {
+          const isNearPenaltyArea = player.team === 'red'
+            ? t.y > this.fieldHeight * 0.7 && t.y < this.fieldHeight * 0.95
+            : t.y < this.fieldHeight * 0.3 && t.y > this.fieldHeight * 0.05;
+          const isNotOnSameSide = Math.abs(t.x - player.x) > 60; // 같은 측면이 아닌 선수
+          return isNearPenaltyArea && isNotOnSameSide;
+        });
+
+        // 시야 능력치에 따라 크로스 vs 컷백 결정
+        // vision이 높을수록 더 좋은 옵션 선택 (크로스 타겟이 있으면 크로스 선호)
+        const visionFactor = stats.vision / 100;
+
+        let useCross = false;
+        let target: PlayerSprite | null = null;
+
+        if (crossTargets.length > 0 && cutbackTargets.length > 0) {
+          // 둘 다 있으면 vision에 따라 결정 (vision 높으면 크로스 60%, 낮으면 40%)
+          useCross = Math.random() < (0.4 + visionFactor * 0.2);
+          target = useCross
+            ? crossTargets[Math.floor(Math.random() * crossTargets.length)]
+            : cutbackTargets[Math.floor(Math.random() * cutbackTargets.length)];
+        } else if (crossTargets.length > 0) {
+          useCross = true;
+          target = crossTargets[Math.floor(Math.random() * crossTargets.length)];
+        } else if (cutbackTargets.length > 0) {
+          useCross = false;
+          target = cutbackTargets[Math.floor(Math.random() * cutbackTargets.length)];
+        } else {
+          // 타겟이 없으면 페널티 스팟 근처로 크로스
+          useCross = true;
+        }
+
+        // 공 소유권 해제
+        player.hasBall = false;
+        this.ball.owner = null;
+        player.ballAcquireCooldown = 600;
+
+        if (useCross) {
+          // 크로스: 공중 패스
+          this.ball.isAirborne = true;
+
+          // 타겟이 있으면 타겟 위치로, 없으면 페널티 스팟으로
+          let targetX: number;
+          let targetY: number;
+
+          if (target) {
+            // 정확도에 따른 오차
+            const accuracy = stats.shootingAccuracy * 0.8 + stats.vision * 0.2;
+            const errorRange = (100 - accuracy) * 0.8;
+            targetX = target.x + (Math.random() - 0.5) * errorRange;
+            targetY = target.y + (Math.random() - 0.5) * errorRange * 0.5;
+          } else {
+            // 페널티 스팟 근처
+            targetX = goalCenterX + (Math.random() - 0.5) * 60;
+            targetY = penaltyAreaY + (player.team === 'red' ? 20 : -20);
+          }
+
+          this.ball.targetPosition = { x: targetX, y: targetY };
+
+          // 크로스 애니메이션
+          const duration = Phaser.Math.Distance.Between(this.ball.x, this.ball.y, targetX, targetY) * 3.5;
+
+          this.tweens.add({
+            targets: this.ball,
+            x: targetX,
+            y: targetY,
+            duration: duration,
+            ease: 'Sine.easeInOut',
+            onComplete: () => {
+              if (this.ball) {
+                this.ball.isAirborne = false;
+                this.ball.targetPosition = null;
+              }
+            }
+          });
+
+          this.tweens.add({
+            targets: this.ball,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: duration / 2,
+            ease: 'Sine.easeOut',
+            yoyo: true,
+            onComplete: () => {
+              if (this.ball) {
+                this.ball.setScale(1);
+              }
+            }
+          });
+        } else {
+          // 컷백: 땅볼 패스
+          if (!target) return;
+
+          const accuracy = stats.shootingAccuracy * 0.6 + stats.vision * 0.4;
+          const errorRange = (100 - accuracy) * 0.5;
+          const targetX = target.x + (Math.random() - 0.5) * errorRange;
+          const targetY = target.y + (Math.random() - 0.5) * errorRange * 0.5;
+
+          const angle = Phaser.Math.Angle.Between(this.ball.x, this.ball.y, targetX, targetY);
+          const power = stats.shootingPower * 2 + 120;
+
+          this.ball.setVelocity(
+            Math.cos(angle) * power,
+            Math.sin(angle) * power
+          );
+        }
       }
 
       getNearbyOpponents(player: PlayerSprite, radius: number): PlayerSprite[] {
