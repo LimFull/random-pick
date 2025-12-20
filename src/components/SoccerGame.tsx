@@ -682,6 +682,12 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           return;
         }
 
+        // 골키퍼는 높은 확률로 패스 선택 (85% 확률)
+        if (player.role === 'goalkeeper' && Math.random() < 0.85) {
+          this.attemptPass(player);
+          return;
+        }
+
         // 슈팅 가능한 거리인지 확인
         const goalY = player.team === 'red' ? this.fieldHeight : 0;
         const distanceToGoal = Math.abs(player.y - goalY);
