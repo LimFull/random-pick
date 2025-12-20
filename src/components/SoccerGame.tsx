@@ -1703,7 +1703,7 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
 
   return (
     <div className="soccer-game-container">
-      <div className="soccer-game-canvas" ref={containerRef} />
+      <div className={`soccer-game-canvas full-screen`} ref={containerRef} />
       <div className="soccer-game-ui">
         <div className="score-display">
           <span className="red-score">{score.red}</span>

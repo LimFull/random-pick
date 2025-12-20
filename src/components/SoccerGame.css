@@ -15,6 +15,15 @@
   max-height:100%;
   flex: 1;
   display: block;
+
+  &.full-screen {
+    position: fixed;
+    height:100dvh;
+    min-height:100dvh;
+    top:env(safe-area-inset-top);
+    left:0;
+    right:0;
+  }
 }
 
 /* 스코어와 시간 표시 - 90도 회전하여 우측 중앙에 배치 */
