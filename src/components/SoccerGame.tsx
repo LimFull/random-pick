@@ -23,6 +23,11 @@ interface PlayerSprite extends Phaser.Physics.Arcade.Sprite {
   ballAcquireCooldown: number; // 공 획득 쿨다운 - 패스/슈팅 후 바로 다시 공을 잡지 못하도록
   dribbleTarget: { x: number; y: number } | null; // 드리블 목표 위치 (방향 유지용)
   dribbleTargetTime: number; // 드리블 목표 유지 시간
+  isPenetrating: boolean; // 침투 중인지 여부
+  penetratingTarget: { x: number; y: number } | null; // 침투 목표 위치
+  penetratingDecisionTime: number; // 침투 결정 유지 시간 (프레임마다 재계산 방지)
+  isChasing: boolean; // 적극적으로 공을 뺏으러 가는 중인지
+  chaseDecisionTime: number; // 추격 결정 유지 시간 (최소 1초)
 }
 
 interface BallSprite extends Phaser.Physics.Arcade.Sprite {
@@ -325,6 +330,11 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         player.ballAcquireCooldown = 0;
         player.dribbleTarget = null;
         player.dribbleTargetTime = 0;
+        player.isPenetrating = false;
+        player.penetratingTarget = null;
+        player.penetratingDecisionTime = 0;
+        player.isChasing = false;
+        player.chaseDecisionTime = 0;
 
         // 역할 할당
         const teamPlayers = this.players.filter(p => p.team === playerData.team);
@@ -942,131 +952,133 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         const myIndex = teamFieldPlayers.findIndex(p => p === player);
         const totalPlayers = teamFieldPlayers.length;
 
-        let targetX: number;
-        let targetY: number;
-
         const goalY = player.team === 'red' ? this.fieldHeight : 0;
         const goalDirection = player.team === 'red' ? 1 : -1;
 
-        // 역할 분배: 좌측 날개 / 중앙 / 우측 날개
+        // 역할 분배: 좌측 날개 / 중앙 전방 / 중앙 후방
+        let isRearSupport = false; // 중앙 후방 지원 여부
         let isWingRole = false;
+
         if (myIndex === 0) {
-          // 좌측 날개 - 왼쪽 가장자리
-          targetX = leftWing;
-          targetY = owner.y + goalDirection * 80;
-          isWingRole = true;
+          isWingRole = true; // 좌측 날개
         } else if (myIndex === totalPlayers - 1) {
-          // 우측 날개 - 오른쪽 가장자리
-          targetX = rightWing;
-          targetY = owner.y + goalDirection * 80;
-          isWingRole = true;
+          isWingRole = true; // 우측 날개
         } else if (myIndex === 1 && totalPlayers > 2) {
           // 중앙 전방 지원
-          targetX = owner.x + (owner.x < centerX ? 60 : -60);
-          targetY = owner.y + goalDirection * 120;
         } else {
-          // 나머지: 중앙 후방 지원
-          targetX = centerX + (myIndex % 2 === 0 ? -80 : 80);
-          targetY = owner.y - goalDirection * 60;
+          // 중앙 후방 지원
+          isRearSupport = true;
         }
 
-        // 윙 역할인데 공 소유자와 같은 쪽이면 반대쪽으로 (목표 위치 기준, 현재 위치 아님)
-        if (isWingRole && Math.abs(targetX - owner.x) < 80) {
-          targetX = targetX < centerX ? rightWing : leftWing;
-        }
+        // 침투 결정 시간 감소
+        player.penetratingDecisionTime -= delta;
 
-        // 윙 역할은 homeX lerp를 적용하지 않고 바로 목표 위치로
-        // 중앙 역할만 homeX와 lerp 적용
-        const homeY = (zone.minY + zone.maxY) / 2;
+        // 침투 결정 재계산 필요 여부 (시간 만료 시)
+        if (player.penetratingDecisionTime <= 0) {
+          // 침투 결정 유지 시간 리셋 (500~1000ms)
+          player.penetratingDecisionTime = 500 + Math.random() * 500;
 
-        if (!isWingRole) {
-          // 중앙 역할만 homeX와 lerp
-          const homeX = centerX;
-          targetX = Phaser.Math.Linear(homeX, targetX, 0.6 + positioningFactor * 0.4);
-        }
-        // 윙은 targetX 그대로 유지
+          // 중앙 후방 지원이 아닌 선수만 침투 시도
+          if (!isRearSupport) {
+            // 공 소유자와 상대 골대까지의 거리 비교
+            const ownerDistToGoal = Math.abs(owner.y - goalY);
+            const myDistToGoal = Math.abs(player.y - goalY);
+            const ownerIsCloserToGoal = ownerDistToGoal < myDistToGoal;
 
-        targetY = Phaser.Math.Linear(homeY, targetY, 0.5 + positioningFactor * 0.5);
+            // 침투 확률 계산
+            let penetrationChance: number;
+            if (ownerIsCloserToGoal) {
+              // 공 소유자가 더 가까우면 높은 확률로 침투 (positioning에 따라 70~95%)
+              penetrationChance = 0.7 + positioningFactor * 0.25;
+            } else {
+              // 공 소유자가 더 멀면 positioning에 따라 침투 (20~60%)
+              penetrationChance = 0.2 + positioningFactor * 0.4;
+            }
 
-        // 상대 수비 라인 계산
-        const opponentDefenders = this.players.filter(p =>
-          p.team !== player.team &&
-          !p.playerData.isGoalkeeper &&
-          (p.role === 'defender' || p.role === 'midfielder')
-        );
+            // 침투 결정
+            if (Math.random() < penetrationChance) {
+              // 침투 목표 설정 (상대 진영 깊숙이)
+              const penetrationDepth = 150 + positioningFactor * 100; // 150~250px
+              let penetrationY = player.team === 'red'
+                ? player.y + penetrationDepth
+                : player.y - penetrationDepth;
 
-        // 상대 수비 라인 Y 좌표 (가장 뒤에 있는 수비수 기준)
-        let defenderLineY: number;
-        if (player.team === 'red') {
-          // red팀 공격 시 blue 수비라인 = blue 수비수 중 가장 위쪽(낮은 Y)
-          defenderLineY = opponentDefenders.length > 0
-            ? Math.min(...opponentDefenders.map(p => p.y))
-            : this.fieldHeight * 0.7;
-        } else {
-          // blue팀 공격 시 red 수비라인 = red 수비수 중 가장 아래쪽(높은 Y)
-          defenderLineY = opponentDefenders.length > 0
-            ? Math.max(...opponentDefenders.map(p => p.y))
-            : this.fieldHeight * 0.3;
-        }
+              // 골대 근처까지 제한
+              const penetrationLimit = player.team === 'red'
+                ? this.fieldHeight * 0.85
+                : this.fieldHeight * 0.15;
+              if (player.team === 'red') {
+                penetrationY = Math.min(penetrationY, penetrationLimit);
+              } else {
+                penetrationY = Math.max(penetrationY, penetrationLimit);
+              }
 
-        // 돌파 시도 (positioning이 높을수록 자주)
-        const distToOwner = Phaser.Math.Distance.Between(player.x, player.y, owner.x, owner.y);
-        const penetrationChance = positioningFactor * 0.5; // positioning 100이면 50% 확률
-        let isPenetrating = false;
-        let isBehindDefenders = false;
+              // X 좌표 결정 (수비수 사이 빈 공간 또는 현재 위치 유지)
+              const gapX = this.findGapBetweenDefenders(player.team, player.x);
+              const penetrationX = gapX !== null ? gapX : player.x;
 
-        // 수비 라인 뒤로 침투 시도 (positioning에 따라)
-        if (distToOwner > 60 && Math.random() < penetrationChance * 0.03) {
-          const goalY = player.team === 'red' ? this.fieldHeight : 0;
-
-          // 수비 라인 뒤로 침투 목표 설정
-          const behindDefenderY = player.team === 'red'
-            ? defenderLineY + 40  // red팀은 blue 수비라인 아래로
-            : defenderLineY - 40; // blue팀은 red 수비라인 위로
-
-          // 상대 선수들 사이의 빈 공간 찾기
-          const gapX = this.findGapBetweenDefenders(player.team, player.x);
-
-          if (gapX !== null) {
-            targetX = gapX;
-            targetY = behindDefenderY;
-            isPenetrating = true;
-            isBehindDefenders = true;
-          }
-        }
-
-        // 일반 돌파 시도 (수비 뒤 침투가 아닌 경우)
-        if (!isPenetrating && distToOwner > 80 && distToOwner < 200 && Math.random() < penetrationChance * 0.04) {
-          // 상대 진영 방향으로 돌파 목표 설정
-          const penetrationY = player.team === 'red'
-            ? player.y + 120 // red팀은 아래로 돌파
-            : player.y - 120; // blue팀은 위로 돌파
-
-          // 주변 상대 선수들 확인
-          const nearbyOpponents = this.players.filter(p =>
-            p.team !== player.team &&
-            !p.playerData.isGoalkeeper &&
-            Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y) < 120
-          );
-
-          if (nearbyOpponents.length > 0) {
-            // 상대 선수들을 피해서 돌파 경로 조정
-            let avoidX = 0;
-            nearbyOpponents.forEach(opponent => {
-              const dx = player.x - opponent.x;
-              avoidX += dx > 0 ? 60 : -60;
-            });
-            targetX = Phaser.Math.Clamp(player.x + avoidX / nearbyOpponents.length, leftWing, rightWing);
+              player.isPenetrating = true;
+              player.penetratingTarget = { x: penetrationX, y: penetrationY };
+            } else {
+              player.isPenetrating = false;
+              player.penetratingTarget = null;
+            }
           } else {
-            targetX = player.x;
+            // 중앙 후방 지원은 침투 안함
+            player.isPenetrating = false;
+            player.penetratingTarget = null;
           }
-
-          targetY = penetrationY;
-          isPenetrating = true;
         }
 
-        // 라인 유지 (과전진 방지) - 수비 뒤 침투 중이면 제한 완화
-        if (!isBehindDefenders) {
+        let targetX: number;
+        let targetY: number;
+
+        // 침투 중이면 침투 목표로 이동
+        if (player.isPenetrating && player.penetratingTarget) {
+          targetX = player.penetratingTarget.x;
+          targetY = player.penetratingTarget.y;
+
+          // 목표에 도달했으면 침투 종료
+          const distToTarget = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
+          if (distToTarget < 30) {
+            player.isPenetrating = false;
+            player.penetratingTarget = null;
+            player.penetratingDecisionTime = 0; // 즉시 재계산
+          }
+        } else {
+          // 일반 위치 잡기
+          if (myIndex === 0) {
+            // 좌측 날개
+            targetX = leftWing;
+            targetY = owner.y + goalDirection * 80;
+          } else if (myIndex === totalPlayers - 1) {
+            // 우측 날개
+            targetX = rightWing;
+            targetY = owner.y + goalDirection * 80;
+          } else if (myIndex === 1 && totalPlayers > 2) {
+            // 중앙 전방 지원
+            targetX = owner.x + (owner.x < centerX ? 60 : -60);
+            targetY = owner.y + goalDirection * 120;
+          } else {
+            // 중앙 후방 지원
+            targetX = centerX + (myIndex % 2 === 0 ? -80 : 80);
+            targetY = owner.y - goalDirection * 60;
+          }
+
+          // 윙 역할인데 공 소유자와 같은 쪽이면 반대쪽으로
+          if (isWingRole && Math.abs(targetX - owner.x) < 80) {
+            targetX = targetX < centerX ? rightWing : leftWing;
+          }
+
+          // 위치 보간
+          const homeY = (zone.minY + zone.maxY) / 2;
+          if (!isWingRole) {
+            const homeX = centerX;
+            targetX = Phaser.Math.Linear(homeX, targetX, 0.6 + positioningFactor * 0.4);
+          }
+          targetY = Phaser.Math.Linear(homeY, targetY, 0.5 + positioningFactor * 0.5);
+
+          // 라인 유지 (과전진 방지)
           const frontLineLimit = player.team === 'red'
             ? Math.max(owner.y + 100, zone.minY)
             : Math.min(owner.y - 100, zone.maxY);
@@ -1075,19 +1087,9 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           } else {
             targetY = Math.max(targetY, frontLineLimit);
           }
-          // 존 범위 내로 제한 (일반 이동 시)
           targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
-        } else {
-          // 수비 뒤 침투 시에는 더 넓은 범위 허용
-          const penetrationLimit = player.team === 'red'
-            ? this.fieldHeight * 0.85  // 골대 근처까지
-            : this.fieldHeight * 0.15;
-          if (player.team === 'red') {
-            targetY = Math.min(targetY, penetrationLimit);
-          } else {
-            targetY = Math.max(targetY, penetrationLimit);
-          }
         }
+
         targetX = Phaser.Math.Clamp(targetX, leftWing, rightWing);
 
         // 혼잡 회피 - 강한 반발력으로 퍼지게
@@ -1106,19 +1108,14 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
             targetX += Math.cos(angle) * repulsion;
             targetY += Math.sin(angle) * repulsion;
           });
-          targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
+          if (!player.isPenetrating) {
+            targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
+          }
           targetX = Phaser.Math.Clamp(targetX, leftWing, rightWing);
         }
 
-        // 돌파 중이면 속도 증가 (수비 뒤 침투는 더 빠르게)
-        let speed: number;
-        if (isBehindDefenders) {
-          speed = stats.speed * 1.2; // 수비 뒤 침투 시 최고 속도
-        } else if (isPenetrating) {
-          speed = stats.speed * 1.0;
-        } else {
-          speed = stats.speed * 0.7;
-        }
+        // 침투 중이면 속도 증가
+        const speed = player.isPenetrating ? stats.speed * 1.2 : stats.speed * 0.7;
         this.moveToward(player, targetX, targetY, speed);
       }
 
@@ -1134,7 +1131,7 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         const goalY = player.team === 'red' ? 30 : this.fieldHeight - 30;
         const goalCenterX = this.fieldWidth / 2;
 
-        // 공 소유자와의 거리로 정렬하여 압박할 선수 결정
+        // 공 소유자와의 거리로 정렬하여 가장 가까운 선수 찾기
         const myTeamPlayers = this.players.filter(p =>
           p.team === player.team && !p.playerData.isGoalkeeper
         );
@@ -1143,9 +1140,34 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           Phaser.Math.Distance.Between(b.x, b.y, ballOwner.x, ballOwner.y)
         );
 
-        const myPressIndex = sortedByDistToOwner.findIndex(p => p === player);
-        const pressCount = 2; // 압박할 선수 수
-        const shouldPress = myPressIndex < pressCount;
+        // 가장 가까운 선수인지 확인
+        const isClosestToBallOwner = sortedByDistToOwner[0] === player;
+
+        // 추격 결정 시간 감소
+        player.chaseDecisionTime -= delta;
+
+        // 가장 가까운 선수의 추격 결정 (defensiveAggression 기반)
+        if (isClosestToBallOwner && player.chaseDecisionTime <= 0) {
+          // 추격 결정 유지 시간 리셋 (1000~1500ms)
+          player.chaseDecisionTime = 1000 + Math.random() * 500;
+
+          // defensiveAggression에 따른 추격 확률 (0 = 20%, 100 = 90%)
+          const chaseChance = 0.2 + (stats.defensiveAggression / 100) * 0.7;
+          player.isChasing = Math.random() < chaseChance;
+        }
+
+        // 가장 가까운 선수가 아니면 추격 상태 해제
+        if (!isClosestToBallOwner) {
+          player.isChasing = false;
+        }
+
+        // 추격 중인 선수와 그 다음 선수가 압박
+        const closestPlayer = sortedByDistToOwner[0];
+        const secondClosestPlayer = sortedByDistToOwner[1];
+
+        // 압박 조건: 가장 가까운 선수가 추격 중이면 본인, 아니면 2번째가 압박
+        const shouldPress = (player === closestPlayer && player.isChasing) ||
+                           (player === secondClosestPlayer && closestPlayer?.isChasing);
 
         if (shouldPress) {
           // 압박 담당: 공 소유자를 추격
@@ -1165,10 +1187,12 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           const centerX = this.fieldWidth / 2;
           const homeY = (zone.minY + zone.maxY) / 2;
 
-          // 수비 라인 선수들을 X축으로 분산
+          // 수비 라인 선수들을 X축으로 분산 (압박하지 않는 선수들)
           const lineDefenders = myTeamPlayers.filter(p => {
-            const idx = sortedByDistToOwner.findIndex(pp => pp === p);
-            return idx >= pressCount; // 압박하지 않는 선수들
+            // 가장 가까운 선수가 추격 중이면 그 선수와 2번째 선수는 압박 담당
+            const isPressingPlayer = (p === closestPlayer && closestPlayer.isChasing) ||
+                                    (p === secondClosestPlayer && closestPlayer?.isChasing);
+            return !isPressingPlayer;
           });
           const sortedLineByX = [...lineDefenders].sort((a, b) => a.x - b.x);
           const myLineIndex = sortedLineByX.findIndex(p => p === player);

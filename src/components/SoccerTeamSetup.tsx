@@ -102,6 +102,7 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
           defense: 90,
           speed: 60,
           positioning: 85,
+          defensiveAggression: 50,
         },
         isGoalkeeper: true,
       });
@@ -121,6 +122,7 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
           defense: 90,
           speed: 60,
           positioning: 85,
+          defensiveAggression: 50,
         },
         isGoalkeeper: true,
       });
