@@ -1,39 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import type { SoccerSetup, SoccerPlayer, Team } from '../types/soccer';
+import type { PlayerSprite, BallSprite, GameContext, GamePhase } from '../soccer/types';
+import {
+  // AI
+  aiWithBall,
+  supportingRun,
+  goalkeeperAI,
+  defendingAI,
+  chaseBall,
+  // Physics
+  handlePlayerCollision,
+  handleBallPlayerCollision,
+  acquireBall,
+} from '../soccer';
 import './SoccerGame.css';
 
 interface SoccerGameProps {
   setup: SoccerSetup;
   onGameEnd: () => void;
-}
-
-type GamePhase = 'playing' | 'goal' | 'finished';
-
-// 엔티티 인터페이스 정의
-interface PlayerSprite extends Phaser.Physics.Arcade.Sprite {
-  playerData: SoccerPlayer;
-  team: Team;
-  hasBall: boolean;
-  facingAngle: number;
-  nameText: Phaser.GameObjects.Text;
-  role: 'goalkeeper' | 'defender' | 'midfielder' | 'attacker';
-  tackleCooldown: number; // 태클 쿨다운 (밀리초)
-  stunTime: number; // 스턴 시간 - 이 시간 동안 AI 이동 불가
-  ballAcquireCooldown: number; // 공 획득 쿨다운 - 패스/슈팅 후 바로 다시 공을 잡지 못하도록
-  dribbleTarget: { x: number; y: number } | null; // 드리블 목표 위치 (방향 유지용)
-  dribbleTargetTime: number; // 드리블 목표 유지 시간
-  isPenetrating: boolean; // 침투 중인지 여부
-  penetratingTarget: { x: number; y: number } | null; // 침투 목표 위치
-  penetratingDecisionTime: number; // 침투 결정 유지 시간 (프레임마다 재계산 방지)
-  isChasing: boolean; // 적극적으로 공을 뺏으러 가는 중인지
-  chaseDecisionTime: number; // 추격 결정 유지 시간 (최소 1초)
-}
-
-interface BallSprite extends Phaser.Physics.Arcade.Sprite {
-  owner: PlayerSprite | null;
-  isAirborne: boolean;
-  targetPosition: { x: number; y: number } | null;
 }
 
 export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
@@ -43,7 +28,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
   const [score, setScore] = useState({ red: 0, blue: 0 });
   const [remainingTime, setRemainingTime] = useState(setup.matchDuration * 60);
 
-  // Phaser 게임 초기화
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -52,13 +36,11 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
     const width = Math.max(rect.width || window.innerWidth, 300);
     const height = Math.max(rect.height || window.innerHeight, 400);
 
-    // 기존 게임 인스턴스가 있으면 제거
     if (gameInstanceRef.current) {
       gameInstanceRef.current.destroy(true);
       gameInstanceRef.current = null;
     }
 
-    // Phaser Scene 클래스 정의
     class SoccerScene extends Phaser.Scene {
       players: PlayerSprite[] = [];
       ball: BallSprite | null = null;
@@ -68,8 +50,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
       fieldHeight = 0;
       goalWidth = 0;
       goalHeight = 0;
-
-      // 게임 상태
       matchTime = 0;
       maxMatchTime = 0;
       redScore = 0;
@@ -78,8 +58,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
       setupData: SoccerSetup | null = null;
       isKickoff = false;
       kickoffPlayer: PlayerSprite | null = null;
-
-      // 콜백
       onScoreUpdate: ((red: number, blue: number) => void) | null = null;
       onTimeUpdate: ((remaining: number) => void) | null = null;
       onGameEnd: (() => void) | null = null;
@@ -88,9 +66,28 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         super({ key: 'SoccerScene' });
       }
 
+      // GameContext 생성
+      getContext(): GameContext {
+        return {
+          scene: this,
+          players: this.players,
+          ball: this.ball,
+          fieldWidth: this.fieldWidth,
+          fieldHeight: this.fieldHeight,
+          goalWidth: this.goalWidth,
+          goalHeight: this.goalHeight,
+          isKickoff: this.isKickoff,
+          kickoffPlayer: this.kickoffPlayer,
+          setKickoffState: (isKickoff: boolean, player: PlayerSprite | null) => {
+            this.isKickoff = isKickoff;
+            this.kickoffPlayer = player;
+          },
+        };
+      }
+
       init(data: { setup: SoccerSetup }) {
         this.setupData = data.setup;
-        this.maxMatchTime = data.setup.matchDuration * 60 * 1000; // 밀리초
+        this.maxMatchTime = data.setup.matchDuration * 60 * 1000;
         this.matchTime = 0;
         this.redScore = 0;
         this.blueScore = 0;
@@ -104,85 +101,50 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         const { width, height } = this.cameras.main;
         this.fieldWidth = width;
         this.fieldHeight = height;
-
-        // 골대 크기 설정 (라인 그리기 전에 필요)
         this.goalWidth = width * 0.3;
         this.goalHeight = 15;
 
-        // 경기장 배경
         this.add.rectangle(0, 0, width, height, 0x2d5a27).setOrigin(0, 0);
-
-        // 경기장 라인
         this.drawFieldLines();
 
-        // Red 팀 골대 (위쪽) - Blue 팀이 공격
         this.redGoal = this.add.rectangle(
-          width / 2,
-          this.goalHeight / 2,
-          this.goalWidth,
-          this.goalHeight,
-          0xff6b6b
+          width / 2, this.goalHeight / 2, this.goalWidth, this.goalHeight, 0xff6b6b
         );
         this.physics.add.existing(this.redGoal, true);
 
-        // Blue 팀 골대 (아래쪽) - Red 팀이 공격
         this.blueGoal = this.add.rectangle(
-          width / 2,
-          height - this.goalHeight / 2,
-          this.goalWidth,
-          this.goalHeight,
-          0x4ecdc4
+          width / 2, height - this.goalHeight / 2, this.goalWidth, this.goalHeight, 0x4ecdc4
         );
         this.physics.add.existing(this.blueGoal, true);
 
-        // 공 생성
         this.createBall();
-
-        // 선수 생성
         this.createPlayers();
-
-        // 충돌 설정
         this.setupCollisions();
 
-        // 초기 킥오프 전 1초 대기
         this.isPaused = true;
-        this.time.delayedCall(1000, () => {
-          this.isPaused = false;
-        });
+        this.time.delayedCall(1000, () => { this.isPaused = false; });
       }
 
       drawFieldLines() {
         const { width, height } = this.cameras.main;
         const graphics = this.add.graphics();
         graphics.lineStyle(2, 0xffffff, 0.6);
-
-        // 중앙선
         graphics.lineBetween(0, height / 2, width, height / 2);
-
-        // 센터 서클
         graphics.strokeCircle(width / 2, height / 2, 50);
 
-        // 페널티 영역 (위쪽)
         const penaltyWidth = this.goalWidth * 2;
         const penaltyHeight = 80;
         graphics.strokeRect((width - penaltyWidth) / 2, 0, penaltyWidth, penaltyHeight);
-
-        // 페널티 영역 (아래쪽)
         graphics.strokeRect((width - penaltyWidth) / 2, height - penaltyHeight, penaltyWidth, penaltyHeight);
 
-        // 골 영역 (위쪽)
         const goalAreaWidth = this.goalWidth + 20;
         const goalAreaHeight = 30;
         graphics.strokeRect((width - goalAreaWidth) / 2, 0, goalAreaWidth, goalAreaHeight);
-
-        // 골 영역 (아래쪽)
         graphics.strokeRect((width - goalAreaWidth) / 2, height - goalAreaHeight, goalAreaWidth, goalAreaHeight);
       }
 
       createBall() {
         const { width, height } = this.cameras.main;
-
-        // 공 그래픽 텍스처 생성
         const ballGraphics = this.add.graphics();
         ballGraphics.fillStyle(0xffffff, 1);
         ballGraphics.fillCircle(12, 12, 10);
@@ -197,7 +159,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         this.ball.setBounce(0.7);
         this.ball.setDrag(80);
         this.ball.setMaxVelocity(600);
-
         this.ball.owner = null;
         this.ball.isAirborne = false;
         this.ball.targetPosition = null;
@@ -205,59 +166,38 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
 
       createPlayers() {
         if (!this.setupData) return;
-
         const { width, height } = this.cameras.main;
 
-        // Red 팀 선수 배치 (위쪽 절반)
         this.setupData.redTeam.forEach((player, index) => {
-          const positions = this.getFormationPositions('red', this.setupData!.redTeam.length, index, player.isGoalkeeper);
-          this.createPlayer(player, positions.x * width, positions.y * height);
+          const pos = this.getFormationPositions('red', this.setupData!.redTeam.length, index, player.isGoalkeeper);
+          this.createPlayer(player, pos.x * width, pos.y * height);
         });
 
-        // Blue 팀 선수 배치 (아래쪽 절반)
         this.setupData.blueTeam.forEach((player, index) => {
-          const positions = this.getFormationPositions('blue', this.setupData!.blueTeam.length, index, player.isGoalkeeper);
-          this.createPlayer(player, positions.x * width, positions.y * height);
+          const pos = this.getFormationPositions('blue', this.setupData!.blueTeam.length, index, player.isGoalkeeper);
+          this.createPlayer(player, pos.x * width, pos.y * height);
         });
 
-        // 초기 킥오프: 랜덤 팀에서 한 명을 공 옆에 배치
         const kickoffTeam: Team = Math.random() < 0.5 ? 'red' : 'blue';
         this.placeKickoffPlayer(kickoffTeam);
 
-        // 플레이어 능력치 로그
         console.log('=== 플레이어 능력치 ===');
         console.log('--- RED 팀 ---');
-        this.setupData.redTeam.forEach(player => {
-          console.log(`[${player.name}]`, player.stats);
-        });
+        this.setupData.redTeam.forEach(player => console.log(`[${player.name}]`, player.stats));
         console.log('--- BLUE 팀 ---');
-        this.setupData.blueTeam.forEach(player => {
-          console.log(`[${player.name}]`, player.stats);
-        });
+        this.setupData.blueTeam.forEach(player => console.log(`[${player.name}]`, player.stats));
       }
 
       placeKickoffPlayer(kickoffTeam: Team) {
         const { width, height } = this.cameras.main;
-
-        // 킥오프 팀의 필드 플레이어들 (골키퍼 제외)
-        const kickoffPlayers = this.players.filter(
-          p => p.team === kickoffTeam && p.role !== 'goalkeeper'
-        );
-
+        const kickoffPlayers = this.players.filter(p => p.team === kickoffTeam && p.role !== 'goalkeeper');
         if (kickoffPlayers.length === 0) return;
 
-        // 랜덤으로 한 명 선택
         const selectedPlayer = kickoffPlayers[Math.floor(Math.random() * kickoffPlayers.length)];
-
-        // 공 옆에 배치 (팀에 따라 약간 다른 위치)
-        const ballX = width / 2;
-        const ballY = height / 2;
         const offsetY = kickoffTeam === 'red' ? -20 : 20;
-
-        selectedPlayer.setPosition(ballX, ballY + offsetY);
+        selectedPlayer.setPosition(width / 2, height / 2 + offsetY);
         selectedPlayer.setVelocity(0, 0);
 
-        // 킥오프 상태 설정 및 공 소유
         this.isKickoff = true;
         this.kickoffPlayer = selectedPlayer;
         selectedPlayer.hasBall = true;
@@ -272,24 +212,16 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           return team === 'red' ? { x: 0.5, y: 0.06 } : { x: 0.5, y: 0.94 };
         }
 
-        // 골키퍼를 제외한 필드 플레이어 인덱스 계산
-        const fieldPlayerIndex = isGoalkeeper ? index : index - (this.setupData?.redTeam.some(p => p.isGoalkeeper) || this.setupData?.blueTeam.some(p => p.isGoalkeeper) ? 0 : 0);
-
+        const fieldPlayerIndex = index;
         const playersPerRow = 3;
         const row = Math.floor(fieldPlayerIndex / playersPerRow);
         const col = fieldPlayerIndex % playersPerRow;
 
-        // 열 위치 계산 (좌, 중앙, 우)
         let colOffset: number;
-        if (playersPerRow === 1) {
-          colOffset = 0;
-        } else if (col === 0) {
-          colOffset = -0.25;
-        } else if (col === 1) {
-          colOffset = 0;
-        } else {
-          colOffset = 0.25;
-        }
+        if (playersPerRow === 1) colOffset = 0;
+        else if (col === 0) colOffset = -0.25;
+        else if (col === 1) colOffset = 0;
+        else colOffset = 0.25;
 
         if (team === 'red') {
           const yBase = 0.18 + row * 0.12;
@@ -304,7 +236,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         const color = playerData.team === 'red' ? 0xff6b6b : 0x4ecdc4;
         const radius = playerData.isGoalkeeper ? 16 : 13;
 
-        // 플레이어 그래픽 생성
         const textureKey = `player-${playerData.name}-${playerData.team}-${Date.now()}`;
         const graphics = this.add.graphics();
         graphics.fillStyle(color, 1);
@@ -336,11 +267,9 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         player.isChasing = false;
         player.chaseDecisionTime = 0;
 
-        // 역할 할당
         const teamPlayers = this.players.filter(p => p.team === playerData.team);
         player.role = playerData.isGoalkeeper ? 'goalkeeper' : this.assignRole(playerData.team, teamPlayers.length);
 
-        // 이름 표시 (90도 회전)
         player.nameText = this.add.text(x, y - radius - 8, playerData.name, {
           fontSize: '10px',
           color: '#ffffff',
@@ -358,213 +287,52 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
       }
 
       setupCollisions() {
-        // 플레이어 간 충돌
+        const ctx = this.getContext();
+
         this.physics.add.collider(
-          this.players,
-          this.players,
-          (obj1, obj2) => this.handlePlayerCollision(obj1 as PlayerSprite, obj2 as PlayerSprite),
-          undefined,
-          this
+          this.players, this.players,
+          (obj1, obj2) => handlePlayerCollision(ctx, obj1 as PlayerSprite, obj2 as PlayerSprite),
+          undefined, this
         );
 
-        // 공과 플레이어 충돌
         if (this.ball) {
           this.physics.add.overlap(
-            this.ball,
-            this.players,
-            (obj1, obj2) => {
-              const ball = obj1 as BallSprite;
-              const player = obj2 as PlayerSprite;
-              this.handleBallPlayerCollision(ball, player);
-            },
-            undefined,
-            this
+            this.ball, this.players,
+            (obj1, obj2) => handleBallPlayerCollision(ctx, obj1 as BallSprite, obj2 as PlayerSprite),
+            undefined, this
           );
 
-          // 공과 골대 충돌 (골 판정)
           if (this.redGoal) {
-            this.physics.add.overlap(
-              this.ball,
-              this.redGoal,
-              () => this.handleGoal('blue'),
-              undefined,
-              this
-            );
+            this.physics.add.overlap(this.ball, this.redGoal, () => this.handleGoal('blue'), undefined, this);
           }
           if (this.blueGoal) {
-            this.physics.add.overlap(
-              this.ball,
-              this.blueGoal,
-              () => this.handleGoal('red'),
-              undefined,
-              this
-            );
+            this.physics.add.overlap(this.ball, this.blueGoal, () => this.handleGoal('red'), undefined, this);
           }
         }
-      }
-
-      handlePlayerCollision(player1: PlayerSprite, player2: PlayerSprite) {
-        // 같은 팀이면 단순 충돌
-        if (player1.team === player2.team) return;
-
-        // 한 선수가 공을 가진 경우 - 태클 시도
-        if (player1.hasBall) {
-          this.attemptTackle(player2, player1);
-        } else if (player2.hasBall) {
-          this.attemptTackle(player1, player2);
-        }
-      }
-
-      handleBallPlayerCollision(ball: BallSprite, player: PlayerSprite) {
-        if (ball.isAirborne) return; // 공중 패스는 인터셉트 불가
-        if (ball.owner === player) return; // 이미 공을 가진 선수
-        if (player.ballAcquireCooldown > 0) return; // 패스/슈팅 직후 쿨다운 중
-
-        // 골키퍼는 특별 처리 - 공을 반드시 막음
-        if (player.playerData.isGoalkeeper) {
-          // 빠른 공(슈팅)은 세이브 처리
-          const ballSpeed = ball.body?.velocity ?
-            Math.sqrt(ball.body.velocity.x ** 2 + ball.body.velocity.y ** 2) : 0;
-
-          if (ballSpeed > 150) {
-            // 세이브! 공을 튕겨냄
-            const deflectAngle = Phaser.Math.Angle.Between(player.x, player.y, ball.x, ball.y);
-            const deflectPower = ballSpeed * 0.4; // 원래 속도의 40%로 튕김
-            ball.setVelocity(
-              Math.cos(deflectAngle) * deflectPower,
-              Math.sin(deflectAngle) * deflectPower
-            );
-            return;
-          } else {
-            // 느린 공은 잡기
-            this.acquireBall(player);
-            return;
-          }
-        }
-
-        // 드리블 상태의 공인 경우 - 태클 시도
-        if (ball.owner && ball.owner.team !== player.team) {
-          this.attemptTackle(player, ball.owner);
-        } else if (!ball.owner) {
-          // 자유 상태의 공 - 획득
-          this.acquireBall(player);
-        } else if (ball.owner && ball.owner.team === player.team) {
-          // 같은 팀의 패스 받기
-          this.acquireBall(player);
-        }
-      }
-
-      attemptTackle(tackler: PlayerSprite, ballOwner: PlayerSprite) {
-        // 쿨다운 중이면 태클 불가
-        if (tackler.tackleCooldown > 0) {
-          return;
-        }
-
-        const tacklerStats = tackler.playerData.stats;
-        const ownerStats = ballOwner.playerData.stats;
-
-        // 태클 성공 확률 계산
-        const tackleChance = (tacklerStats.defense + tacklerStats.strength) /
-                             (ownerStats.dribbleSpeed + ownerStats.strength + 80);
-
-        const roll = Math.random();
-
-        if (roll < tackleChance) {
-          // 태클 성공 - 공 빼앗기
-          this.acquireBall(tackler);
-
-          // 기존 소유자가 튕겨남
-          const angle = Phaser.Math.Angle.Between(tackler.x, tackler.y, ballOwner.x, ballOwner.y);
-          const pushForce = 200 + tacklerStats.strength * 2;
-          ballOwner.setVelocity(
-            Math.cos(angle) * pushForce,
-            Math.sin(angle) * pushForce
-          );
-
-          // 공을 빼앗긴 선수도 쿨다운 적용
-          ballOwner.tackleCooldown = 800;
-          tackler.tackleCooldown = 500;
-
-          // 스턴 적용 - AI가 velocity를 덮어쓰지 않도록
-          ballOwner.stunTime = 400;
-        } else {
-          // 태클 실패 - 태클 시도자가 멀리 튕겨남
-          const angle = Phaser.Math.Angle.Between(ballOwner.x, ballOwner.y, tackler.x, tackler.y);
-          const pushForce = 350 + ownerStats.strength * 3;
-
-          tackler.setVelocity(
-            Math.cos(angle) * pushForce,
-            Math.sin(angle) * pushForce
-          );
-
-          // 태클 실패 시 더 긴 쿨다운
-          tackler.tackleCooldown = 1200;
-
-          // 스턴 적용 - AI가 velocity를 덮어쓰지 않도록 (태클 실패 시 더 긴 스턴)
-          tackler.stunTime = 600;
-        }
-      }
-
-      acquireBall(player: PlayerSprite) {
-        if (!this.ball) return;
-
-        // 기존 소유자 해제
-        if (this.ball.owner) {
-          this.ball.owner.hasBall = false;
-        }
-
-        // 새 소유자 설정
-        this.ball.owner = player;
-        player.hasBall = true;
-        this.ball.setVelocity(0, 0);
       }
 
       handleGoal(scoringTeam: Team) {
-        if (this.isPaused) return;
-        if (!this.ball) return;
-
-        // 공이 실제로 골대 안에 있는지 확인
-        const goalWidth = this.goalWidth;
-        const ballX = this.ball.x;
-        const fieldCenterX = this.fieldWidth / 2;
-
-        if (Math.abs(ballX - fieldCenterX) > goalWidth / 2) {
-          return; // 골대 범위 밖
-        }
+        if (this.isPaused || !this.ball) return;
+        if (Math.abs(this.ball.x - this.fieldWidth / 2) > this.goalWidth / 2) return;
 
         this.isPaused = true;
 
-        // 점수 업데이트
-        if (scoringTeam === 'red') {
-          this.redScore++;
-        } else {
-          this.blueScore++;
-        }
+        if (scoringTeam === 'red') this.redScore++;
+        else this.blueScore++;
 
-        if (this.onScoreUpdate) {
-          this.onScoreUpdate(this.redScore, this.blueScore);
-        }
+        if (this.onScoreUpdate) this.onScoreUpdate(this.redScore, this.blueScore);
 
-        // 골 이펙트
         this.showGoalEffect(scoringTeam);
 
-        // 실점한 팀이 킥오프
         const concedingTeam: Team = scoringTeam === 'red' ? 'blue' : 'red';
-
-        // 2초 후 리셋, 그 후 1초 대기 후 재개
         this.time.delayedCall(2000, () => {
           this.resetPositions(concedingTeam);
-          // 킥오프 전 1초 대기
-          this.time.delayedCall(1000, () => {
-            this.isPaused = false;
-          });
+          this.time.delayedCall(1000, () => { this.isPaused = false; });
         });
       }
 
       showGoalEffect(scoringTeam: Team) {
         const { width, height } = this.cameras.main;
-
-        // 화면 중앙에 "GOAL!" 텍스트
         const goalText = this.add.text(width / 2, height / 2, 'GOAL!', {
           fontSize: '48px',
           color: scoringTeam === 'red' ? '#ff6b6b' : '#4ecdc4',
@@ -573,7 +341,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           strokeThickness: 4,
         }).setOrigin(0.5).setDepth(200);
 
-        // 애니메이션
         this.tweens.add({
           targets: goalText,
           scaleX: { from: 0.5, to: 1.3 },
@@ -584,16 +351,13 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           onComplete: () => goalText.destroy()
         });
 
-        // 화면 흔들림
         this.cameras.main.shake(300, 0.01);
       }
 
       resetPositions(kickoffTeam?: Team) {
         if (!this.setupData) return;
-
         const { width, height } = this.cameras.main;
 
-        // 공을 중앙으로
         if (this.ball) {
           this.ball.setPosition(width / 2, height / 2);
           this.ball.setVelocity(0, 0);
@@ -602,7 +366,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           this.ball.setScale(1);
         }
 
-        // 선수들 원위치
         const redPlayers = this.players.filter(p => p.team === 'red');
         const bluePlayers = this.players.filter(p => p.team === 'blue');
 
@@ -620,1211 +383,66 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           player.setVelocity(0, 0);
         });
 
-        // 킥오프 팀의 선수 한 명을 공 옆에 배치
-        if (kickoffTeam) {
-          this.placeKickoffPlayer(kickoffTeam);
-        }
+        if (kickoffTeam) this.placeKickoffPlayer(kickoffTeam);
       }
 
       update(time: number, delta: number) {
-        // 이름 텍스트 위치는 항상 업데이트 (일시정지 중에도) - 회전되었으므로 옆에 배치
         this.players.forEach(player => {
           player.nameText.setPosition(player.x + 20, player.y);
         });
 
         if (this.isPaused) return;
 
-        // 시간 업데이트
         this.matchTime += delta;
         const remaining = Math.max(0, Math.ceil((this.maxMatchTime - this.matchTime) / 1000));
         if (this.onTimeUpdate) this.onTimeUpdate(remaining);
 
-        // 경기 종료 체크
         if (this.matchTime >= this.maxMatchTime) {
           this.endMatch();
           return;
         }
 
-        // 쿨다운/스턴 감소
         this.players.forEach(player => {
-          // 태클 쿨다운 감소
-          if (player.tackleCooldown > 0) {
-            player.tackleCooldown -= delta;
-          }
-          // 스턴 시간 감소
-          if (player.stunTime > 0) {
-            player.stunTime -= delta;
-          }
-          // 공 획득 쿨다운 감소
-          if (player.ballAcquireCooldown > 0) {
-            player.ballAcquireCooldown -= delta;
-          }
+          if (player.tackleCooldown > 0) player.tackleCooldown -= delta;
+          if (player.stunTime > 0) player.stunTime -= delta;
+          if (player.ballAcquireCooldown > 0) player.ballAcquireCooldown -= delta;
         });
 
-        // AI 로직
         this.updateAI(delta);
-
-        // 드리블 상태 공 위치 업데이트
         this.updateBallPosition();
       }
 
       updateAI(delta: number) {
+        const ctx = this.getContext();
+
         this.players.forEach(player => {
-          // 스턴 상태면 AI 이동 스킵 (velocity 유지)
-          if (player.stunTime > 0) {
-            return;
-          }
+          if (player.stunTime > 0) return;
 
           if (player.hasBall) {
-            this.aiWithBall(player, delta);
+            aiWithBall(ctx, player, delta);
           } else {
-            this.aiWithoutBall(player, delta);
+            this.aiWithoutBall(ctx, player, delta);
           }
         });
       }
 
-      aiWithBall(player: PlayerSprite, delta: number) {
-        const stats = player.playerData.stats;
+      aiWithoutBall(ctx: GameContext, player: PlayerSprite, delta: number) {
+        if (!ctx.ball) return;
 
-        // 킥오프 시 아군 진영으로 패스
-        if (this.isKickoff && player === this.kickoffPlayer) {
-          this.attemptKickoffPass(player);
-          return;
-        }
+        const ballOwner = ctx.ball.owner;
 
-        // 골키퍼는 높은 확률로 패스 선택 (85% 확률)
-        if (player.role === 'goalkeeper' && Math.random() < 0.85) {
-          this.attemptPass(player);
-          return;
-        }
-
-        // 상대 진영 코너 지역에서 크로스/컷백 시도
-        const goalY = player.team === 'red' ? this.fieldHeight : 0;
-        const cornerZoneY = player.team === 'red'
-          ? this.fieldHeight * 0.85  // red팀: 아래쪽 15% 영역
-          : this.fieldHeight * 0.15; // blue팀: 위쪽 15% 영역
-        const isInCornerZoneY = player.team === 'red'
-          ? player.y > cornerZoneY
-          : player.y < cornerZoneY;
-        const cornerZoneX = 80; // 측면 80px 이내
-        const isInCornerZoneX = player.x < cornerZoneX || player.x > this.fieldWidth - cornerZoneX;
-
-        if (isInCornerZoneY && isInCornerZoneX) {
-          // 시야 능력치에 따른 크로스/컷백 시도 확률 (vision 0 = 10%, vision 100 = 60%)
-          const crossCutbackChance = 0.1 + (stats.vision / 100) * 0.5;
-
-          if (Math.random() < crossCutbackChance * 0.1) { // 프레임당 확률 조정
-            this.attemptCrossOrCutback(player);
-            return;
-          }
-        }
-
-        // 슈팅 가능한 거리인지 확인
-        const distanceToGoal = Math.abs(player.y - goalY);
-
-        // 중거리슛 시도
-        if (distanceToGoal < this.fieldHeight * 0.4 && Math.random() < stats.longShotFrequency / 2000) {
-          this.attemptShot(player);
-          return;
-        }
-
-        // 근거리 슈팅
-        if (distanceToGoal < this.fieldHeight * 0.2 && Math.random() < 0.02) {
-          this.attemptShot(player);
-          return;
-        }
-
-        // 패스 또는 드리블 결정
-        const nearbyOpponents = this.getNearbyOpponents(player, 70);
-
-        if (nearbyOpponents.length > 0) {
-          // 드리블 시도 성향에 따른 패스 확률
-          // dribbleAttempt가 낮을수록 패스 확률 높음
-          // dribbleAttempt 0 = 60% 패스, dribbleAttempt 100 = 10% 패스
-          const passChance = 0.6 - (stats.dribbleAttempt / 100) * 0.5;
-
-          // 상대가 많을수록 패스 확률 증가
-          const opponentMultiplier = 1 + (nearbyOpponents.length - 1) * 0.3;
-
-          if (Math.random() < passChance * opponentMultiplier * 0.05) {
-            this.attemptPass(player);
-            return;
-          }
-        }
-
-        this.dribble(player, delta);
-      }
-
-      attemptKickoffPass(player: PlayerSprite) {
-        if (!this.ball) return;
-
-        // 아군 진영에 있는 팀원 찾기 (골키퍼 제외, 자신 제외)
-        const teammates = this.players.filter(p =>
-          p.team === player.team &&
-          p !== player &&
-          !p.playerData.isGoalkeeper
-        );
-
-        // 아군 진영에 있는 팀원 필터링
-        const teammatesInOwnHalf = teammates.filter(p => {
-          if (player.team === 'red') {
-            return p.y < this.fieldHeight / 2; // red팀은 위쪽이 아군 진영
-          } else {
-            return p.y > this.fieldHeight / 2; // blue팀은 아래쪽이 아군 진영
-          }
-        });
-
-        // 아군 진영에 팀원이 없으면 가장 가까운 팀원에게 패스
-        const passTargets = teammatesInOwnHalf.length > 0 ? teammatesInOwnHalf : teammates;
-
-        if (passTargets.length === 0) {
-          this.isKickoff = false;
-          this.kickoffPlayer = null;
-          return;
-        }
-
-        // 가장 가까운 팀원 선택
-        passTargets.sort((a, b) =>
-          Phaser.Math.Distance.Between(player.x, player.y, a.x, a.y) -
-          Phaser.Math.Distance.Between(player.x, player.y, b.x, b.y)
-        );
-
-        const target = passTargets[0];
-
-        // 공 소유권 해제
-        player.hasBall = false;
-        this.ball.owner = null;
-        player.ballAcquireCooldown = 300;
-
-        // 패스 실행
-        const angle = Phaser.Math.Angle.Between(this.ball.x, this.ball.y, target.x, target.y);
-        const power = 180;
-
-        this.ball.setVelocity(
-          Math.cos(angle) * power,
-          Math.sin(angle) * power
-        );
-
-        // 킥오프 상태 해제
-        this.isKickoff = false;
-        this.kickoffPlayer = null;
-      }
-
-      aiWithoutBall(player: PlayerSprite, delta: number) {
-        if (!this.ball) return;
-
-        const ballOwner = this.ball.owner;
-
-        // 역할에 따른 행동 분기
         if (player.role === 'goalkeeper') {
-          this.goalkeeperAI(player, delta);
+          goalkeeperAI(ctx, player, delta);
           return;
         }
 
-        // 팀이 공을 가지고 있는 경우
         if (ballOwner && ballOwner.team === player.team) {
-          this.supportingRun(player, delta);
+          supportingRun(ctx, player, delta);
         } else if (ballOwner && ballOwner.team !== player.team) {
-          // 상대팀이 공을 가진 경우
-          this.defendingAI(player, delta);
+          defendingAI(ctx, player, delta);
         } else {
-          // 자유 상태의 공 - 추격
-          this.chaseBall(player, delta);
+          chaseBall(ctx, player, delta);
         }
-      }
-
-      goalkeeperAI(player: PlayerSprite, delta: number) {
-        if (!this.ball) return;
-
-        const stats = player.playerData.stats;
-        const isAIGoalkeeper = player.playerData.name === 'AI GK';
-
-        const goalY = player.team === 'red' ? 25 : this.fieldHeight - 25;
-        const goalCenterX = this.fieldWidth / 2;
-        const goalLeftX = goalCenterX - this.goalWidth / 2 + 10;
-        const goalRightX = goalCenterX + this.goalWidth / 2 - 10;
-
-        // 공이 골대를 향해 오는지 확인
-        const ballVelocity = this.ball.body?.velocity as Phaser.Math.Vector2 | undefined;
-        const isBallComingToGoal = player.team === 'red'
-          ? (ballVelocity && ballVelocity.y < -30)
-          : (ballVelocity && ballVelocity.y > 30);
-
-        if (isBallComingToGoal && Math.abs(this.ball.y - goalY) < this.fieldHeight * 0.35) {
-          // 공을 막으러 이동
-          const targetX = Phaser.Math.Clamp(this.ball.x, goalLeftX, goalRightX);
-          const speed = isAIGoalkeeper ? stats.speed * 1.8 : stats.speed * 1.2;
-          this.moveToward(player, targetX, goalY, speed);
-        } else {
-          // 기본 위치 유지
-          const targetX = Phaser.Math.Clamp(this.ball.x, goalLeftX, goalRightX);
-          this.moveToward(player, targetX, goalY, stats.speed * 0.4);
-        }
-
-        // 공이 가까우면 잡기 시도 (직접 충돌 범위만)
-        if (!this.ball.isAirborne && !this.ball.owner && player.ballAcquireCooldown <= 0) {
-          const distance = Phaser.Math.Distance.Between(player.x, player.y, this.ball.x, this.ball.y);
-
-          // 골키퍼 몸에 직접 닿는 범위만 (약 20px)
-          if (distance < 22) {
-            this.acquireBall(player);
-          }
-        }
-      }
-
-      // 역할별 위치 영역 정의
-      getPositionZone(player: PlayerSprite): { minY: number; maxY: number } {
-        const { height } = this.cameras.main;
-
-        if (player.role === 'goalkeeper') {
-          const y = player.team === 'red' ? 0 : height * 0.88;
-          return { minY: y, maxY: y + height * 0.12 };
-        }
-
-        if (player.team === 'red') {
-          switch (player.role) {
-            case 'defender': return { minY: height * 0.08, maxY: height * 0.32 };
-            case 'midfielder': return { minY: height * 0.22, maxY: height * 0.52 };
-            case 'attacker': return { minY: height * 0.38, maxY: height * 0.68 };
-          }
-        } else {
-          switch (player.role) {
-            case 'defender': return { minY: height * 0.68, maxY: height * 0.92 };
-            case 'midfielder': return { minY: height * 0.48, maxY: height * 0.78 };
-            case 'attacker': return { minY: height * 0.32, maxY: height * 0.62 };
-          }
-        }
-
-        return { minY: 0, maxY: height };
-      }
-
-      // 수비수들 사이의 빈 공간 찾기
-      findGapBetweenDefenders(attackingTeam: Team, playerX: number): number | null {
-        const defenders = this.players.filter(p =>
-          p.team !== attackingTeam &&
-          !p.playerData.isGoalkeeper &&
-          (p.role === 'defender' || p.role === 'midfielder')
-        );
-
-        if (defenders.length < 2) {
-          // 수비수가 1명 이하면 중앙으로 침투
-          return this.fieldWidth / 2;
-        }
-
-        // 수비수들을 X 좌표로 정렬
-        const sortedDefenders = [...defenders].sort((a, b) => a.x - b.x);
-
-        // 수비수들 사이의 간격 계산
-        const gaps: { x: number; width: number }[] = [];
-
-        // 왼쪽 경계와 첫 번째 수비수 사이
-        gaps.push({
-          x: (50 + sortedDefenders[0].x) / 2,
-          width: sortedDefenders[0].x - 50
-        });
-
-        // 수비수들 사이
-        for (let i = 0; i < sortedDefenders.length - 1; i++) {
-          const gapWidth = sortedDefenders[i + 1].x - sortedDefenders[i].x;
-          gaps.push({
-            x: (sortedDefenders[i].x + sortedDefenders[i + 1].x) / 2,
-            width: gapWidth
-          });
-        }
-
-        // 마지막 수비수와 오른쪽 경계 사이
-        const lastDefender = sortedDefenders[sortedDefenders.length - 1];
-        gaps.push({
-          x: (lastDefender.x + this.fieldWidth - 50) / 2,
-          width: this.fieldWidth - 50 - lastDefender.x
-        });
-
-        // 최소 간격 이상인 갭만 필터링
-        const validGaps = gaps.filter(gap => gap.width > 60);
-
-        if (validGaps.length === 0) return null;
-
-        // 플레이어 위치에서 가장 가까운 유효한 갭 선택
-        validGaps.sort((a, b) => Math.abs(a.x - playerX) - Math.abs(b.x - playerX));
-
-        return validGaps[0].x;
-      }
-
-      supportingRun(player: PlayerSprite, delta: number) {
-        if (!this.ball || !this.ball.owner) return;
-
-        const zone = this.getPositionZone(player);
-        const stats = player.playerData.stats;
-        const owner = this.ball.owner;
-        const positioningFactor = stats.positioning / 100; // 0~1
-
-        // 경기장 경계
-        const leftWing = 50;
-        const rightWing = this.fieldWidth - 50;
-        const centerX = this.fieldWidth / 2;
-
-        // 같은 팀 선수들 (소유자, 골키퍼 제외) - 고정 인덱스 사용
-        const teamFieldPlayers = this.players.filter(p =>
-          p.team === player.team && p !== owner && !p.playerData.isGoalkeeper
-        );
-
-        // 플레이어 배열 내 고정 인덱스 사용 (매 프레임 변하지 않음)
-        const myIndex = teamFieldPlayers.findIndex(p => p === player);
-        const totalPlayers = teamFieldPlayers.length;
-
-        const goalY = player.team === 'red' ? this.fieldHeight : 0;
-        const goalDirection = player.team === 'red' ? 1 : -1;
-
-        // 역할 분배: 좌측 날개 / 중앙 전방 / 중앙 후방
-        let isRearSupport = false; // 중앙 후방 지원 여부
-        let isWingRole = false;
-
-        if (myIndex === 0) {
-          isWingRole = true; // 좌측 날개
-        } else if (myIndex === totalPlayers - 1) {
-          isWingRole = true; // 우측 날개
-        } else if (myIndex === 1 && totalPlayers > 2) {
-          // 중앙 전방 지원
-        } else {
-          // 중앙 후방 지원
-          isRearSupport = true;
-        }
-
-        // 침투 결정 시간 감소
-        player.penetratingDecisionTime -= delta;
-
-        // 침투 결정 재계산 필요 여부 (시간 만료 시)
-        if (player.penetratingDecisionTime <= 0) {
-          // 침투 결정 유지 시간 리셋 (500~1000ms)
-          player.penetratingDecisionTime = 500 + Math.random() * 500;
-
-          // 중앙 후방 지원이 아닌 선수만 침투 시도
-          if (!isRearSupport) {
-            // 공 소유자와 상대 골대까지의 거리 비교
-            const ownerDistToGoal = Math.abs(owner.y - goalY);
-            const myDistToGoal = Math.abs(player.y - goalY);
-            const ownerIsCloserToGoal = ownerDistToGoal < myDistToGoal;
-
-            // 침투 확률 계산
-            let penetrationChance: number;
-            if (ownerIsCloserToGoal) {
-              // 공 소유자가 더 가까우면 높은 확률로 침투 (positioning에 따라 70~95%)
-              penetrationChance = 0.7 + positioningFactor * 0.25;
-            } else {
-              // 공 소유자가 더 멀면 positioning에 따라 침투 (20~60%)
-              penetrationChance = 0.2 + positioningFactor * 0.4;
-            }
-
-            // 침투 결정
-            if (Math.random() < penetrationChance) {
-              // 침투 목표 설정 (상대 진영 깊숙이)
-              const penetrationDepth = 150 + positioningFactor * 100; // 150~250px
-              let penetrationY = player.team === 'red'
-                ? player.y + penetrationDepth
-                : player.y - penetrationDepth;
-
-              // 골대 근처까지 제한
-              const penetrationLimit = player.team === 'red'
-                ? this.fieldHeight * 0.85
-                : this.fieldHeight * 0.15;
-              if (player.team === 'red') {
-                penetrationY = Math.min(penetrationY, penetrationLimit);
-              } else {
-                penetrationY = Math.max(penetrationY, penetrationLimit);
-              }
-
-              // X 좌표 결정 (수비수 사이 빈 공간 또는 현재 위치 유지)
-              const gapX = this.findGapBetweenDefenders(player.team, player.x);
-              const penetrationX = gapX !== null ? gapX : player.x;
-
-              player.isPenetrating = true;
-              player.penetratingTarget = { x: penetrationX, y: penetrationY };
-            } else {
-              player.isPenetrating = false;
-              player.penetratingTarget = null;
-            }
-          } else {
-            // 중앙 후방 지원은 침투 안함
-            player.isPenetrating = false;
-            player.penetratingTarget = null;
-          }
-        }
-
-        let targetX: number;
-        let targetY: number;
-
-        // 침투 중이면 침투 목표로 이동
-        if (player.isPenetrating && player.penetratingTarget) {
-          targetX = player.penetratingTarget.x;
-          targetY = player.penetratingTarget.y;
-
-          // 목표에 도달했으면 침투 종료
-          const distToTarget = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
-          if (distToTarget < 30) {
-            player.isPenetrating = false;
-            player.penetratingTarget = null;
-            player.penetratingDecisionTime = 0; // 즉시 재계산
-          }
-        } else {
-          // 일반 위치 잡기
-          if (myIndex === 0) {
-            // 좌측 날개
-            targetX = leftWing;
-            targetY = owner.y + goalDirection * 80;
-          } else if (myIndex === totalPlayers - 1) {
-            // 우측 날개
-            targetX = rightWing;
-            targetY = owner.y + goalDirection * 80;
-          } else if (myIndex === 1 && totalPlayers > 2) {
-            // 중앙 전방 지원
-            targetX = owner.x + (owner.x < centerX ? 60 : -60);
-            targetY = owner.y + goalDirection * 120;
-          } else {
-            // 중앙 후방 지원
-            targetX = centerX + (myIndex % 2 === 0 ? -80 : 80);
-            targetY = owner.y - goalDirection * 60;
-          }
-
-          // 윙 역할인데 공 소유자와 같은 쪽이면 반대쪽으로
-          if (isWingRole && Math.abs(targetX - owner.x) < 80) {
-            targetX = targetX < centerX ? rightWing : leftWing;
-          }
-
-          // 위치 보간
-          const homeY = (zone.minY + zone.maxY) / 2;
-          if (!isWingRole) {
-            const homeX = centerX;
-            targetX = Phaser.Math.Linear(homeX, targetX, 0.6 + positioningFactor * 0.4);
-          }
-          targetY = Phaser.Math.Linear(homeY, targetY, 0.5 + positioningFactor * 0.5);
-
-          // 라인 유지 (과전진 방지)
-          const frontLineLimit = player.team === 'red'
-            ? Math.max(owner.y + 100, zone.minY)
-            : Math.min(owner.y - 100, zone.maxY);
-          if (player.team === 'red') {
-            targetY = Math.min(targetY, frontLineLimit);
-          } else {
-            targetY = Math.max(targetY, frontLineLimit);
-          }
-          targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
-        }
-
-        targetX = Phaser.Math.Clamp(targetX, leftWing, rightWing);
-
-        // 혼잡 회피 - 강한 반발력으로 퍼지게
-        const separationRadius = 80;
-        const nearbyTeammates = this.players.filter(p =>
-          p.team === player.team &&
-          p !== player &&
-          Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y) < separationRadius
-        );
-
-        if (nearbyTeammates.length > 0) {
-          nearbyTeammates.forEach(teammate => {
-            const dist = Phaser.Math.Distance.Between(player.x, player.y, teammate.x, teammate.y);
-            const angle = Phaser.Math.Angle.Between(teammate.x, teammate.y, player.x, player.y);
-            const repulsion = (separationRadius - dist) * 0.6;
-            targetX += Math.cos(angle) * repulsion;
-            targetY += Math.sin(angle) * repulsion;
-          });
-          if (!player.isPenetrating) {
-            targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
-          }
-          targetX = Phaser.Math.Clamp(targetX, leftWing, rightWing);
-        }
-
-        // 침투 중이면 속도 증가
-        const speed = player.isPenetrating ? stats.speed * 1.2 : stats.speed * 0.7;
-        this.moveToward(player, targetX, targetY, speed);
-      }
-
-      defendingAI(player: PlayerSprite, delta: number) {
-        if (!this.ball || !this.ball.owner) return;
-
-        const ballOwner = this.ball.owner;
-        const stats = player.playerData.stats;
-        const zone = this.getPositionZone(player);
-        const positioningFactor = stats.positioning / 100; // 0~1
-
-        // 우리 골대 위치
-        const goalY = player.team === 'red' ? 30 : this.fieldHeight - 30;
-        const goalCenterX = this.fieldWidth / 2;
-
-        // 공 소유자와의 거리로 정렬하여 가장 가까운 선수 찾기
-        const myTeamPlayers = this.players.filter(p =>
-          p.team === player.team && !p.playerData.isGoalkeeper
-        );
-        const sortedByDistToOwner = [...myTeamPlayers].sort((a, b) =>
-          Phaser.Math.Distance.Between(a.x, a.y, ballOwner.x, ballOwner.y) -
-          Phaser.Math.Distance.Between(b.x, b.y, ballOwner.x, ballOwner.y)
-        );
-
-        // 가장 가까운 선수인지 확인
-        const isClosestToBallOwner = sortedByDistToOwner[0] === player;
-
-        // 추격 결정 시간 감소
-        player.chaseDecisionTime -= delta;
-
-        // 가장 가까운 선수의 추격 결정 (defensiveAggression 기반)
-        if (isClosestToBallOwner && player.chaseDecisionTime <= 0) {
-          // 추격 결정 유지 시간 리셋 (1000~1500ms)
-          player.chaseDecisionTime = 1000 + Math.random() * 500;
-
-          // defensiveAggression에 따른 추격 확률 (0 = 20%, 100 = 90%)
-          const chaseChance = 0.2 + (stats.defensiveAggression / 100) * 0.7;
-          player.isChasing = Math.random() < chaseChance;
-        }
-
-        // 가장 가까운 선수가 아니면 추격 상태 해제
-        if (!isClosestToBallOwner) {
-          player.isChasing = false;
-        }
-
-        // 추격 중인 선수와 그 다음 선수가 압박
-        const closestPlayer = sortedByDistToOwner[0];
-        const secondClosestPlayer = sortedByDistToOwner[1];
-
-        // 압박 조건: 가장 가까운 선수가 추격 중이면 본인, 아니면 2번째가 압박
-        const shouldPress = (player === closestPlayer && player.isChasing) ||
-                           (player === secondClosestPlayer && closestPlayer?.isChasing);
-
-        if (shouldPress) {
-          // 압박 담당: 공 소유자를 추격
-          // positioning이 낮을수록 무작정 추격, 높을수록 차단 위치로
-          const chaseRatio = 1 - positioningFactor * 0.5; // positioning 100이면 50%만 추격
-
-          // 차단 지점 계산 (소유자 → 골대 라인 사이)
-          const blockX = Phaser.Math.Linear(ballOwner.x, goalCenterX, 0.4);
-          const blockY = Phaser.Math.Linear(ballOwner.y, goalY, 0.4);
-
-          const targetX = Phaser.Math.Linear(blockX, ballOwner.x, chaseRatio);
-          const targetY = Phaser.Math.Linear(blockY, ballOwner.y, chaseRatio);
-
-          this.moveToward(player, targetX, targetY, stats.speed * 0.85);
-        } else {
-          // 수비 라인 유지: 골대 방향으로 형태 유지하면서 X축으로 퍼지기
-          const centerX = this.fieldWidth / 2;
-          const homeY = (zone.minY + zone.maxY) / 2;
-
-          // 수비 라인 선수들을 X축으로 분산 (압박하지 않는 선수들)
-          const lineDefenders = myTeamPlayers.filter(p => {
-            // 가장 가까운 선수가 추격 중이면 그 선수와 2번째 선수는 압박 담당
-            const isPressingPlayer = (p === closestPlayer && closestPlayer.isChasing) ||
-                                    (p === secondClosestPlayer && closestPlayer?.isChasing);
-            return !isPressingPlayer;
-          });
-          const sortedLineByX = [...lineDefenders].sort((a, b) => a.x - b.x);
-          const myLineIndex = sortedLineByX.findIndex(p => p === player);
-          const totalLineDefenders = sortedLineByX.length;
-
-          // 수비 위치 분산: 좌측, 중앙, 우측
-          let homeX: number;
-          if (totalLineDefenders <= 1) {
-            homeX = centerX;
-          } else if (myLineIndex === 0) {
-            homeX = this.fieldWidth * 0.25; // 좌측
-          } else if (myLineIndex === totalLineDefenders - 1) {
-            homeX = this.fieldWidth * 0.75; // 우측
-          } else {
-            homeX = centerX; // 중앙
-          }
-
-          // 공이 좌우로 이동하면 라인도 슬라이딩
-          const slideFactor = 0.3 + positioningFactor * 0.2; // positioning 높을수록 더 잘 슬라이딩
-          const slideX = homeX + (ballOwner.x - centerX) * slideFactor;
-
-          // 차단 지점으로 이동 (positioning이 높을수록)
-          // blockPoint = lerp(ownerPos, goalCenter, 0.35~0.6)
-          const blockRatio = 0.35 + positioningFactor * 0.25;
-          const blockY = Phaser.Math.Linear(ballOwner.y, goalY, blockRatio);
-
-          // positioning이 높을수록 차단 위치로, 낮을수록 홈 포지션
-          let targetX = Phaser.Math.Linear(homeX, slideX, 0.3 + positioningFactor * 0.4);
-          let targetY = Phaser.Math.Linear(homeY, blockY, positioningFactor);
-
-          // 존 범위 내로 제한
-          targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
-          targetX = Phaser.Math.Clamp(targetX, 30, this.fieldWidth - 30);
-
-          // 혼잡 회피
-          const nearbyTeammates = this.players.filter(p =>
-            p.team === player.team &&
-            p !== player &&
-            Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y) < 60
-          );
-
-          if (nearbyTeammates.length > 0) {
-            nearbyTeammates.forEach(teammate => {
-              const angle = Phaser.Math.Angle.Between(teammate.x, teammate.y, player.x, player.y);
-              targetX += Math.cos(angle) * 20;
-              targetY += Math.sin(angle) * 20;
-            });
-            targetY = Phaser.Math.Clamp(targetY, zone.minY, zone.maxY);
-            targetX = Phaser.Math.Clamp(targetX, 30, this.fieldWidth - 30);
-          }
-
-          this.moveToward(player, targetX, targetY, stats.speed * 0.55);
-        }
-      }
-
-      chaseBall(player: PlayerSprite, delta: number) {
-        if (!this.ball) return;
-
-        const stats = player.playerData.stats;
-        const positioningFactor = stats.positioning / 100;
-        const distance = Phaser.Math.Distance.Between(player.x, player.y, this.ball.x, this.ball.y);
-
-        // 같은 팀에서 공에 가까운 순서 확인
-        const myTeamPlayers = this.players.filter(p =>
-          p.team === player.team && !p.playerData.isGoalkeeper
-        );
-        const sortedByDist = [...myTeamPlayers].sort((a, b) =>
-          Phaser.Math.Distance.Between(a.x, a.y, this.ball!.x, this.ball!.y) -
-          Phaser.Math.Distance.Between(b.x, b.y, this.ball!.x, this.ball!.y)
-        );
-
-        const myIndex = sortedByDist.findIndex(p => p === player);
-
-        // positioning이 높을수록 가까운 1-2명만 추격, 낮을수록 다같이 추격
-        const maxChasers = Math.round(2 + (1 - positioningFactor) * 2); // positioning 0이면 4명, 100이면 2명
-
-        if (myIndex < maxChasers) {
-          this.moveToward(player, this.ball.x, this.ball.y, stats.speed * 0.9);
-        } else {
-          // 나머지는 지원 위치로 - X축 분산
-          const zone = this.getPositionZone(player);
-          const homeY = (zone.minY + zone.maxY) / 2;
-          const centerX = this.fieldWidth / 2;
-
-          // 추격하지 않는 선수들을 X축으로 분산
-          const supporters = myTeamPlayers.filter((_, idx) => idx >= maxChasers);
-          const sortedByX = [...supporters].sort((a, b) => a.x - b.x);
-          const mySupportIndex = sortedByX.findIndex(p => p === player);
-          const totalSupporters = sortedByX.length;
-
-          let baseX: number;
-          if (totalSupporters <= 1) {
-            baseX = centerX;
-          } else if (mySupportIndex === 0) {
-            baseX = this.fieldWidth * 0.2; // 좌측
-          } else if (mySupportIndex === totalSupporters - 1) {
-            baseX = this.fieldWidth * 0.8; // 우측
-          } else {
-            baseX = centerX;
-          }
-
-          // 공 방향으로 약간 이동
-          const targetX = Phaser.Math.Linear(baseX, this.ball.x, 0.25);
-          const targetY = Phaser.Math.Clamp(
-            Phaser.Math.Linear(homeY, this.ball.y, 0.2),
-            zone.minY,
-            zone.maxY
-          );
-          this.moveToward(player, targetX, targetY, stats.speed * 0.5);
-        }
-      }
-
-      moveToward(player: PlayerSprite, targetX: number, targetY: number, speed: number) {
-        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
-        const distance = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
-
-        // 목표 지점 근처에서는 멈춤 (떨림 방지)
-        if (distance > 15) {
-          // 목표에 가까워지면 속도 감소 (부드러운 감속)
-          const speedFactor = Math.min(1, distance / 50);
-          const finalSpeed = speed * (0.3 + speedFactor * 0.7);
-
-          player.setVelocity(
-            Math.cos(angle) * finalSpeed,
-            Math.sin(angle) * finalSpeed
-          );
-          player.facingAngle = angle;
-        } else {
-          player.setVelocity(0, 0);
-        }
-      }
-
-      dribble(player: PlayerSprite, delta: number) {
-        const stats = player.playerData.stats;
-        const goalY = player.team === 'red' ? this.fieldHeight : 0;
-        const speed = stats.dribbleSpeed * 1.5;
-
-        // 드리블 목표 유지 시간 감소
-        player.dribbleTargetTime -= delta;
-
-        // 목표가 없거나 시간이 만료되면 새로운 목표 설정
-        if (!player.dribbleTarget || player.dribbleTargetTime <= 0) {
-          // 주변 상대 선수 확인
-          const nearbyOpponents = this.players.filter(p =>
-            p.team !== player.team &&
-            !p.playerData.isGoalkeeper &&
-            Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y) < 100
-          );
-
-          let targetX = player.x;
-          let targetY = goalY;
-
-          // 상대가 있으면 피할지 돌파할지 결정
-          if (nearbyOpponents.length > 0) {
-            // breakthroughAttempt가 높을수록 직진 확률 높음
-            const goStraightChance = stats.breakthroughAttempt / 100;
-
-            if (Math.random() > goStraightChance) {
-              // 상대를 피해서 드리블
-              let avoidX = 0;
-              let avoidY = 0;
-
-              nearbyOpponents.forEach(opponent => {
-                const dx = player.x - opponent.x;
-                const dy = player.y - opponent.y;
-                const dist = Math.max(Phaser.Math.Distance.Between(player.x, player.y, opponent.x, opponent.y), 1);
-
-                // 상대에게서 멀어지는 방향으로 가중치 (가까울수록 강하게)
-                const weight = (100 - dist) / 100;
-                avoidX += (dx / dist) * weight * 80;
-                avoidY += (dy / dist) * weight * 40; // Y축은 덜 회피 (골대 방향 유지)
-              });
-
-              // 피하는 방향 적용 (경기장 범위 내로 제한)
-              targetX = Phaser.Math.Clamp(player.x + avoidX, 50, this.fieldWidth - 50);
-
-              // 골대 방향으로 약간 전진하면서 피하기
-              const goalDirection = player.team === 'red' ? 1 : -1;
-              targetY = player.y + (goalDirection * 60) + avoidY;
-            }
-          }
-
-          // 새 목표 설정 및 유지 시간 (300~500ms)
-          player.dribbleTarget = { x: targetX, y: targetY };
-          player.dribbleTargetTime = 300 + Math.random() * 200;
-        }
-
-        // 캐시된 목표로 드리블
-        const targetX = player.dribbleTarget.x;
-        const targetY = player.dribbleTarget.y;
-
-        // 드리블 방향 계산
-        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
-
-        player.setVelocity(
-          Math.cos(angle) * speed,
-          Math.sin(angle) * speed
-        );
-        player.facingAngle = angle;
-      }
-
-      attemptPass(player: PlayerSprite) {
-        const teammates = this.players.filter(p =>
-          p.team === player.team &&
-          p !== player &&
-          !p.playerData.isGoalkeeper
-        );
-
-        if (teammates.length === 0) return;
-
-        const stats = player.playerData.stats;
-
-        // 가장 좋은 패스 대상 찾기
-        const target = this.findBestPassTarget(player, teammates);
-        if (!target) return;
-
-        // 패스 경로에 상대팀이 있는지 확인
-        const opponents = this.getPlayersInPath(player, target);
-
-        // 패스 타입 결정 (능력치에 따라)
-        const passAccuracy = stats.shootingAccuracy;
-        const useAirPass = opponents.length > 0 && Math.random() < passAccuracy / 100;
-
-        if (useAirPass) {
-          this.airPass(player, target);
-        } else {
-          this.groundPass(player, target);
-        }
-      }
-
-      findBestPassTarget(player: PlayerSprite, teammates: PlayerSprite[]): PlayerSprite | null {
-        const goalY = player.team === 'red' ? this.fieldHeight : 0;
-
-        // 너무 가까운 선수는 제외
-        const validTargets = teammates.filter(t =>
-          Phaser.Math.Distance.Between(player.x, player.y, t.x, t.y) > 40
-        );
-
-        if (validTargets.length === 0) return null;
-
-        // 각 팀원에게 점수 부여 (상대 골대에 가까울수록 높은 점수)
-        const scoredTargets = validTargets.map(target => {
-          const distToGoal = Math.abs(target.y - goalY);
-          const maxDist = this.fieldHeight;
-
-          // 골대에 가까울수록 높은 점수 (0~1 범위)
-          const goalProximityScore = 1 - (distToGoal / maxDist);
-
-          // 패스 거리 점수 (너무 멀면 감점)
-          const passDist = Phaser.Math.Distance.Between(player.x, player.y, target.x, target.y);
-          const passDistScore = Math.max(0, 1 - (passDist / (this.fieldWidth * 0.8)));
-
-          // 상대 골대 근접성에 더 높은 가중치
-          const totalScore = goalProximityScore * 2 + passDistScore;
-
-          return { target, score: totalScore };
-        });
-
-        // 점수 기반 확률적 선택
-        const totalScore = scoredTargets.reduce((sum, t) => sum + t.score, 0);
-
-        if (totalScore <= 0) {
-          return validTargets[0];
-        }
-
-        // 가중치 랜덤 선택
-        let random = Math.random() * totalScore;
-        for (const { target, score } of scoredTargets) {
-          random -= score;
-          if (random <= 0) {
-            return target;
-          }
-        }
-
-        return scoredTargets[0].target;
-      }
-
-      getPlayersInPath(from: PlayerSprite, to: PlayerSprite): PlayerSprite[] {
-        return this.players.filter(p => {
-          if (p === from || p === to) return false;
-          if (p.team === from.team) return false;
-
-          // 두 점 사이의 거리와 p까지의 거리로 경로상에 있는지 확인
-          const totalDist = Phaser.Math.Distance.Between(from.x, from.y, to.x, to.y);
-          const distFromStart = Phaser.Math.Distance.Between(from.x, from.y, p.x, p.y);
-          const distToEnd = Phaser.Math.Distance.Between(p.x, p.y, to.x, to.y);
-
-          // 경로 근처에 있는지 확인 (오차 허용)
-          return distFromStart + distToEnd < totalDist + 40;
-        });
-      }
-
-      groundPass(player: PlayerSprite, target: PlayerSprite) {
-        if (!this.ball) return;
-
-        const stats = player.playerData.stats;
-
-        // 공 소유권 해제
-        player.hasBall = false;
-        this.ball.owner = null;
-        player.ballAcquireCooldown = 500; // 패스 후 0.5초간 공 획득 불가
-
-        // 패스 정확도에 따른 오차
-        const accuracy = stats.shootingAccuracy;
-        const errorRange = (100 - accuracy) * 0.4;
-        const targetX = target.x + (Math.random() - 0.5) * errorRange;
-        const targetY = target.y + (Math.random() - 0.5) * errorRange;
-
-        // 공 속도 설정
-        const angle = Phaser.Math.Angle.Between(this.ball.x, this.ball.y, targetX, targetY);
-        const power = stats.shootingPower * 2.5 + 100;
-
-        this.ball.setVelocity(
-          Math.cos(angle) * power,
-          Math.sin(angle) * power
-        );
-      }
-
-      airPass(player: PlayerSprite, target: PlayerSprite) {
-        if (!this.ball) return;
-
-        const stats = player.playerData.stats;
-
-        // 공 소유권 해제
-        player.hasBall = false;
-        this.ball.owner = null;
-        this.ball.isAirborne = true;
-        player.ballAcquireCooldown = 800; // 공중 패스 후 0.8초간 공 획득 불가
-
-        // 공중 패스는 정확도가 낮음
-        const accuracy = stats.shootingAccuracy * 0.7;
-        const errorRange = (100 - accuracy) * 1.2;
-        const targetX = target.x + (Math.random() - 0.5) * errorRange;
-        const targetY = target.y + (Math.random() - 0.5) * errorRange;
-
-        this.ball.targetPosition = { x: targetX, y: targetY };
-
-        // 공중 패스 애니메이션 (크기 변화)
-        const duration = Phaser.Math.Distance.Between(this.ball.x, this.ball.y, targetX, targetY) * 4;
-
-        // 위치 이동 트윈 (yoyo 없음)
-        this.tweens.add({
-          targets: this.ball,
-          x: targetX,
-          y: targetY,
-          duration: duration,
-          ease: 'Sine.easeInOut',
-          onComplete: () => {
-            if (this.ball) {
-              this.ball.isAirborne = false;
-              this.ball.targetPosition = null;
-            }
-          }
-        });
-
-        // 스케일 애니메이션 (yoyo로 올라갔다 내려오는 효과)
-        this.tweens.add({
-          targets: this.ball,
-          scaleX: 1.4,
-          scaleY: 1.4,
-          duration: duration / 2,
-          ease: 'Sine.easeOut',
-          yoyo: true,
-          onComplete: () => {
-            if (this.ball) {
-              this.ball.setScale(1);
-            }
-          }
-        });
-      }
-
-      attemptShot(player: PlayerSprite) {
-        if (!this.ball) return;
-
-        const stats = player.playerData.stats;
-        const goalY = player.team === 'red' ? this.fieldHeight : 0;
-        const goalCenterX = this.fieldWidth / 2;
-        const goalHalfWidth = this.goalWidth / 2;
-
-        // 골대 좌우 포스트 위치
-        const leftPostX = goalCenterX - goalHalfWidth + 5; // 포스트 안쪽으로 약간
-        const rightPostX = goalCenterX + goalHalfWidth - 5;
-
-        // 니어포스트와 파포스트 결정 (플레이어 위치 기준)
-        const nearPostX = player.x < goalCenterX ? leftPostX : rightPostX;
-        const farPostX = player.x < goalCenterX ? rightPostX : leftPostX;
-
-        // 상대 골키퍼 찾기
-        const opponentTeam = player.team === 'red' ? 'blue' : 'red';
-        const goalkeeper = this.players.find(p => p.team === opponentTeam && p.role === 'goalkeeper');
-
-        // 각 포스트로의 슈팅 각도 계산
-        const angleToNearPost = Math.abs(Phaser.Math.Angle.Between(player.x, player.y, nearPostX, goalY));
-        const angleToFarPost = Math.abs(Phaser.Math.Angle.Between(player.x, player.y, farPostX, goalY));
-
-        // 골키퍼가 막고 있는 영역 계산
-        let nearPostOpen = 1.0;
-        let farPostOpen = 1.0;
-
-        if (goalkeeper) {
-          const gkX = goalkeeper.x;
-          const gkBlockRadius = 35; // 골키퍼가 커버하는 반경
-
-          // 골키퍼가 각 포스트 방향을 얼마나 막고 있는지 계산
-          const distToNearPost = Math.abs(gkX - nearPostX);
-          const distToFarPost = Math.abs(gkX - farPostX);
-
-          // 골키퍼가 포스트에 가까울수록 그 방향의 열린 정도가 낮아짐
-          nearPostOpen = Math.min(1.0, distToNearPost / (gkBlockRadius * 2));
-          farPostOpen = Math.min(1.0, distToFarPost / (gkBlockRadius * 2));
-
-          // 최소값 설정 (완전히 막혀도 약간의 확률은 있음)
-          nearPostOpen = Math.max(0.1, nearPostOpen);
-          farPostOpen = Math.max(0.1, farPostOpen);
-        }
-
-        // 슈팅 각도와 열린 정도를 종합하여 각 방향의 득점 가능성 계산
-        const nearPostScore = nearPostOpen * (1 + Math.abs(Math.sin(angleToNearPost)));
-        const farPostScore = farPostOpen * (1 + Math.abs(Math.sin(angleToFarPost)));
-
-        // 확률적으로 방향 선택
-        const totalScore = nearPostScore + farPostScore;
-        const nearPostProbability = nearPostScore / totalScore;
-
-        const chosenPostX = Math.random() < nearPostProbability ? nearPostX : farPostX;
-
-        // 공 소유권 해제
-        player.hasBall = false;
-        this.ball.owner = null;
-        player.ballAcquireCooldown = 600; // 슈팅 후 0.6초간 공 획득 불가
-
-        // 슈팅 정확도에 따른 미스 확률 계산 (정확도 100 = 5% 미스, 정확도 0 = 70% 미스)
-        const accuracy = stats.shootingAccuracy;
-        const missChance = 0.05 + (100 - accuracy) * 0.0065;
-        const isMiss = Math.random() < missChance;
-
-        let targetX: number;
-
-        if (isMiss) {
-          // 미스 시 선택한 포스트 방향 바깥으로 슈팅
-          const missOffset = 25 + Math.random() * 45; // 골대 바깥 25~70px
-
-          if (chosenPostX < goalCenterX) {
-            // 왼쪽 포스트를 노렸다면 왼쪽 바깥으로
-            targetX = leftPostX - missOffset;
-          } else {
-            // 오른쪽 포스트를 노렸다면 오른쪽 바깥으로
-            targetX = rightPostX + missOffset;
-          }
-        } else {
-          // 정상 슈팅 - 선택한 포스트 부근으로 (정확도에 따른 약간의 오차)
-          const errorRange = (100 - accuracy) * 0.3;
-          const error = (Math.random() - 0.5) * errorRange;
-
-          // 포스트 안쪽으로 약간 여유를 두고 조준
-          if (chosenPostX < goalCenterX) {
-            targetX = chosenPostX + 10 + error; // 왼쪽 포스트면 오른쪽으로 약간
-          } else {
-            targetX = chosenPostX - 10 + error; // 오른쪽 포스트면 왼쪽으로 약간
-          }
-        }
-
-        // 공 속도 설정
-        const angle = Phaser.Math.Angle.Between(this.ball.x, this.ball.y, targetX, goalY);
-        const power = stats.shootingPower * 3.5 + 200;
-
-        this.ball.setVelocity(
-          Math.cos(angle) * power,
-          Math.sin(angle) * power
-        );
-      }
-
-      attemptCrossOrCutback(player: PlayerSprite) {
-        if (!this.ball) return;
-
-        const stats = player.playerData.stats;
-        const goalY = player.team === 'red' ? this.fieldHeight : 0;
-        const goalCenterX = this.fieldWidth / 2;
-        const penaltyAreaY = player.team === 'red'
-          ? this.fieldHeight - 80  // 페널티 박스 Y
-          : 80;
-
-        // 팀원 중 패널티 에어리어 근처에 있는 선수 찾기
-        const teammates = this.players.filter(p =>
-          p.team === player.team &&
-          p !== player &&
-          !p.playerData.isGoalkeeper
-        );
-
-        // 컷백 대상: 플레이어 뒤쪽에 있는 팀원 (골대 반대 방향)
-        const cutbackTargets = teammates.filter(t => {
-          const isBehind = player.team === 'red'
-            ? t.y < player.y - 30  // red팀: 위쪽에 있는 선수
-            : t.y > player.y + 30; // blue팀: 아래쪽에 있는 선수
-          const isNearCenter = Math.abs(t.x - goalCenterX) < this.fieldWidth * 0.35;
-          return isBehind && isNearCenter;
-        });
-
-        // 크로스 대상: 페널티 에어리어 근처에 있는 팀원
-        const crossTargets = teammates.filter(t => {
-          const isNearPenaltyArea = player.team === 'red'
-            ? t.y > this.fieldHeight * 0.7 && t.y < this.fieldHeight * 0.95
-            : t.y < this.fieldHeight * 0.3 && t.y > this.fieldHeight * 0.05;
-          const isNotOnSameSide = Math.abs(t.x - player.x) > 60; // 같은 측면이 아닌 선수
-          return isNearPenaltyArea && isNotOnSameSide;
-        });
-
-        // 시야 능력치에 따라 크로스 vs 컷백 결정
-        // vision이 높을수록 더 좋은 옵션 선택 (크로스 타겟이 있으면 크로스 선호)
-        const visionFactor = stats.vision / 100;
-
-        let useCross = false;
-        let target: PlayerSprite | null = null;
-
-        if (crossTargets.length > 0 && cutbackTargets.length > 0) {
-          // 둘 다 있으면 vision에 따라 결정 (vision 높으면 크로스 60%, 낮으면 40%)
-          useCross = Math.random() < (0.4 + visionFactor * 0.2);
-          target = useCross
-            ? crossTargets[Math.floor(Math.random() * crossTargets.length)]
-            : cutbackTargets[Math.floor(Math.random() * cutbackTargets.length)];
-        } else if (crossTargets.length > 0) {
-          useCross = true;
-          target = crossTargets[Math.floor(Math.random() * crossTargets.length)];
-        } else if (cutbackTargets.length > 0) {
-          useCross = false;
-          target = cutbackTargets[Math.floor(Math.random() * cutbackTargets.length)];
-        } else {
-          // 타겟이 없으면 페널티 스팟 근처로 크로스
-          useCross = true;
-        }
-
-        // 공 소유권 해제
-        player.hasBall = false;
-        this.ball.owner = null;
-        player.ballAcquireCooldown = 600;
-
-        if (useCross) {
-          // 크로스: 공중 패스
-          this.ball.isAirborne = true;
-
-          // 타겟이 있으면 타겟 위치로, 없으면 페널티 스팟으로
-          let targetX: number;
-          let targetY: number;
-
-          if (target) {
-            // 정확도에 따른 오차
-            const accuracy = stats.shootingAccuracy * 0.8 + stats.vision * 0.2;
-            const errorRange = (100 - accuracy) * 0.8;
-            targetX = target.x + (Math.random() - 0.5) * errorRange;
-            targetY = target.y + (Math.random() - 0.5) * errorRange * 0.5;
-          } else {
-            // 페널티 스팟 근처
-            targetX = goalCenterX + (Math.random() - 0.5) * 60;
-            targetY = penaltyAreaY + (player.team === 'red' ? 20 : -20);
-          }
-
-          this.ball.targetPosition = { x: targetX, y: targetY };
-
-          // 크로스 애니메이션
-          const duration = Phaser.Math.Distance.Between(this.ball.x, this.ball.y, targetX, targetY) * 3.5;
-
-          this.tweens.add({
-            targets: this.ball,
-            x: targetX,
-            y: targetY,
-            duration: duration,
-            ease: 'Sine.easeInOut',
-            onComplete: () => {
-              if (this.ball) {
-                this.ball.isAirborne = false;
-                this.ball.targetPosition = null;
-              }
-            }
-          });
-
-          this.tweens.add({
-            targets: this.ball,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            duration: duration / 2,
-            ease: 'Sine.easeOut',
-            yoyo: true,
-            onComplete: () => {
-              if (this.ball) {
-                this.ball.setScale(1);
-              }
-            }
-          });
-        } else {
-          // 컷백: 땅볼 패스
-          if (!target) return;
-
-          const accuracy = stats.shootingAccuracy * 0.6 + stats.vision * 0.4;
-          const errorRange = (100 - accuracy) * 0.5;
-          const targetX = target.x + (Math.random() - 0.5) * errorRange;
-          const targetY = target.y + (Math.random() - 0.5) * errorRange * 0.5;
-
-          const angle = Phaser.Math.Angle.Between(this.ball.x, this.ball.y, targetX, targetY);
-          const power = stats.shootingPower * 2 + 120;
-
-          this.ball.setVelocity(
-            Math.cos(angle) * power,
-            Math.sin(angle) * power
-          );
-        }
-      }
-
-      getNearbyOpponents(player: PlayerSprite, radius: number): PlayerSprite[] {
-        return this.players.filter(p =>
-          p.team !== player.team &&
-          Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y) < radius
-        );
       }
 
       updateBallPosition() {
@@ -1841,8 +459,6 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
 
       endMatch() {
         this.isPaused = true;
-
-        // 최종 결과 표시
         const { width, height } = this.cameras.main;
 
         let resultText = 'DRAW!';
@@ -1877,40 +493,25 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
       scene: SoccerScene,
       physics: {
         default: 'arcade',
-        arcade: {
-          gravity: { x: 0, y: 0 },
-          debug: false,
-        },
+        arcade: { gravity: { x: 0, y: 0 }, debug: false },
       },
-      scale: {
-        mode: Phaser.Scale.RESIZE,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-      },
+      scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
     };
 
     const game = new Phaser.Game(config);
     gameInstanceRef.current = game;
 
-    // 씬 시작 시 데이터 전달
     game.scene.start('SoccerScene', { setup });
 
-    // 씬이 생성된 후 콜백 설정
     setTimeout(() => {
       const scene = game.scene.getScene('SoccerScene') as SoccerScene;
       if (scene) {
-        scene.onScoreUpdate = (red: number, blue: number) => {
-          setScore({ red, blue });
-        };
-        scene.onTimeUpdate = (remaining: number) => {
-          setRemainingTime(remaining);
-        };
-        scene.onGameEnd = () => {
-          setGamePhase('finished');
-        };
+        scene.onScoreUpdate = (red: number, blue: number) => setScore({ red, blue });
+        scene.onTimeUpdate = (remaining: number) => setRemainingTime(remaining);
+        scene.onGameEnd = () => setGamePhase('finished');
       }
     }, 100);
 
-    // 리사이즈 핸들러
     const handleResize = () => {
       if (gameInstanceRef.current && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -1950,9 +551,7 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
           <span className="score-separator">-</span>
           <span className="blue-score">{score.blue}</span>
         </div>
-        <div className="time-display">
-          {formatTime(remainingTime)}
-        </div>
+        <div className="time-display">{formatTime(remainingTime)}</div>
       </div>
       {gamePhase === 'finished' && (
         <div className="game-result-overlay">
