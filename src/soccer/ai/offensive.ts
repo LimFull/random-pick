@@ -26,13 +26,68 @@ export function aiWithBall(
   }
 
   // 골키퍼는 높은 확률로 패스 선택. vision 능력치의 영향을 받음.
-  if (player.role === 'goalkeeper' && Math.random() < 0.05 + (stats.vision / 100) * 0.01) {
+  if (player.role === 'goalkeeper' && Math.random() < 0.001 + (stats.vision / 100) * 0.01) {
+    attemptPass(ctx, player);
+    return;
+  }
+ 
+  // 상대팀 플레이어 리스트
+  const opponents = ctx.players.filter(p => p.team !== player.team && !p.playerData.isGoalkeeper);
+  // 각도가 골대 범위 내에 있는지 확인 (각도 정규화 필요)
+  const normalizeAngle = (angle: number) => {
+    while (angle > Math.PI) angle -= 2 * Math.PI;
+    while (angle < -Math.PI) angle += 2 * Math.PI;
+    return angle;
+  };
+  // 플레이어에서 골대 양 끝까지의 각도 계산
+  const goalY = player.team === 'red' ? ctx.fieldHeight : 0;
+  const goalCenterX = ctx.fieldWidth / 2;
+  const goalLeftX = goalCenterX - ctx.goalWidth / 2;
+  const goalRightX = goalCenterX + ctx.goalWidth / 2;
+  const angleToLeftPost = Phaser.Math.Angle.Between(player.x, player.y, goalLeftX, goalY);
+  const angleToRightPost = Phaser.Math.Angle.Between(player.x, player.y, goalRightX, goalY);
+  const normLeft = normalizeAngle(angleToLeftPost);
+  const normRight = normalizeAngle(angleToRightPost);
+  
+  // 골대를 가로막는 상대팀 플레이어 리스트
+  
+  const blockingOpponents = opponents.filter(p => {
+    // 자신과 상대를 잇는 직선이 상대 골대 범위에 포함되는지 확인
+    
+    
+    
+    const angleToOpponent = Phaser.Math.Angle.Between(player.x, player.y, p.x, p.y);
+    const normOpponent = normalizeAngle(angleToOpponent);
+    
+    // 각도 범위 내에 있는지 확인
+    let isInAngleRange = false;
+    if (normLeft < normRight) {
+      isInAngleRange = normOpponent >= normLeft && normOpponent <= normRight;
+    } else {
+      // 각도 범위가 -PI와 PI를 넘어가는 경우
+      isInAngleRange = normOpponent >= normLeft || normOpponent <= normRight;
+    }
+    
+    // 상대 플레이어가 플레이어와 골대 사이에 있는지 확인 (거리 체크)
+    const distToGoal = Phaser.Math.Distance.Between(player.x, player.y, goalCenterX, goalY);
+    const distToOpponent = Phaser.Math.Distance.Between(player.x, player.y, p.x, p.y);
+    const distOpponentToGoal = Phaser.Math.Distance.Between(p.x, p.y, goalCenterX, goalY);
+    const isBetweenPlayerAndGoal = distToOpponent < distToGoal && distOpponentToGoal < distToGoal;
+    
+    // 골대를 가로막는 조건: 각도 범위 내에 있고, 플레이어와 골대 사이에 위치
+    const isBlocking = isInAngleRange && isBetweenPlayerAndGoal;
+
+    const isCloseOpponent = distToOpponent < ctx.fieldHeight * 0.3;
+
+    return isBlocking && isCloseOpponent;
+  });
+
+  if (player.role !== 'goalkeeper' && Math.random() < 0.001 + (stats.vision / 100) * 0.005 && blockingOpponents.length > 0) {
     attemptPass(ctx, player);
     return;
   }
 
   // 상대 진영 코너 지역에서 크로스/컷백 시도
-  const goalY = player.team === 'red' ? ctx.fieldHeight : 0;
   const cornerZoneY = player.team === 'red'
     ? ctx.fieldHeight * 0.85
     : ctx.fieldHeight * 0.15;
