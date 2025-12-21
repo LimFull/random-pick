@@ -45,10 +45,26 @@ body {
 
 .app-nav {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 10px;
   padding: 20px;
   background: rgba(0, 0, 0, 0.1);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.app-nav::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* 화면이 충분히 넓을 때는 중앙 정렬 */
+@media (min-width: 600px) {
+  .app-nav {
+    justify-content: center;
+  }
 }
 
 .nav-button {
@@ -61,6 +77,8 @@ body {
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.3s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .nav-button:hover:not(:disabled) {
