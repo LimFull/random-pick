@@ -265,7 +265,7 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         player.isPenetrating = false;
         player.penetratingTarget = null;
         player.penetratingDecisionTime = 0;
-        player.isChasing = false;
+        player.isPressing = false;
         player.chaseDecisionTime = 0;
 
         const teamPlayers = this.players.filter(p => p.team === playerData.team);

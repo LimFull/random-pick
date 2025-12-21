@@ -76,45 +76,40 @@ export function defendingAI(
     Phaser.Math.Distance.Between(b.x, b.y, ballOwner.x, ballOwner.y)
   );
 
-  const isClosestToBallOwner = sortedByDistToOwner[0] === player;
+  const closestPlayer = sortedByDistToOwner[0];
+  const isClosestToBallOwner = closestPlayer === player;
 
   // 추격 결정
   player.chaseDecisionTime -= delta;
 
   if (isClosestToBallOwner && player.chaseDecisionTime <= 0) {
     player.chaseDecisionTime = 1000 + Math.random() * 500;
-    const chaseChance = 0.2 + (stats.defensiveAggression / 100) * 0.7;
-    player.isChasing = Math.random() < chaseChance;
+    const chaseChance = 0.2 + (stats.positioning / 100) * 0.7;
+    player.isPressing = Math.random() < chaseChance;
   }
 
   if (!isClosestToBallOwner) {
-    player.isChasing = false;
+    player.isPressing = false;
   }
 
-  const closestPlayer = sortedByDistToOwner[0];
   const secondClosestPlayer = sortedByDistToOwner[1];
 
-  const shouldPress = (player === closestPlayer && player.isChasing) ||
-                     (player === secondClosestPlayer && closestPlayer?.isChasing);
+  const shouldPress = (isClosestToBallOwner && player.isPressing);
+                     
 
   if (shouldPress) {
-    const chaseRatio = 1 - positioningFactor * 0.5;
+    const targetX = ballOwner.x;
+    const targetY = ballOwner.y;
 
-    const blockX = Phaser.Math.Linear(ballOwner.x, goalCenterX, 0.4);
-    const blockY = Phaser.Math.Linear(ballOwner.y, goalY, 0.4);
-
-    const targetX = Phaser.Math.Linear(blockX, ballOwner.x, chaseRatio);
-    const targetY = Phaser.Math.Linear(blockY, ballOwner.y, chaseRatio);
-
-    moveToward(player, targetX, targetY, stats.speed * 0.85);
+    moveToward(player, targetX, targetY, stats.speed * 1);
   } else {
     // 수비 라인 유지
     const centerX = ctx.fieldWidth / 2;
     const homeY = (zone.minY + zone.maxY) / 2;
 
     const lineDefenders = myTeamPlayers.filter(p => {
-      const isPressingPlayer = (p === closestPlayer && closestPlayer.isChasing) ||
-                              (p === secondClosestPlayer && closestPlayer?.isChasing);
+      const isPressingPlayer = (p === closestPlayer && closestPlayer.isPressing) ||
+                              (p === secondClosestPlayer && closestPlayer?.isPressing);
       return !isPressingPlayer;
     });
     const sortedLineByX = [...lineDefenders].sort((a, b) => a.x - b.x);
@@ -161,7 +156,7 @@ export function defendingAI(
       targetX = Phaser.Math.Clamp(targetX, 30, ctx.fieldWidth - 30);
     }
 
-    moveToward(player, targetX, targetY, stats.speed * 0.55);
+    moveToward(player, targetX, targetY, stats.speed * 0.8);
   }
 }
 

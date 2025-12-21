@@ -33,7 +33,7 @@ export interface PlayerSprite extends Phaser.Physics.Arcade.Sprite {
   isPenetrating: boolean;
   penetratingTarget: { x: number; y: number } | null;
   penetratingDecisionTime: number;
-  isChasing: boolean;
+  isPressing: boolean;
   chaseDecisionTime: number;
 }
 
