@@ -117,7 +117,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🎯 랜덤픽</h1>
+        <h1>🎲 랜덤픽</h1>
       </header>
 
       {/* 탭 네비게이션 */}
