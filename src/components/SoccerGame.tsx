@@ -157,7 +157,8 @@ export function SoccerGame({ setup, onGameEnd }: SoccerGameProps) {
         this.ball.setCircle(10, 2, 2);
         this.ball.setCollideWorldBounds(true);
         this.ball.setBounce(0.7);
-        this.ball.setDrag(80);
+        this.ball.setDamping(true);
+        this.ball.setDrag(0.85);
         this.ball.setMaxVelocity(600);
         this.ball.owner = null;
         this.ball.isAirborne = false;
