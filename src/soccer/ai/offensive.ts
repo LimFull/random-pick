@@ -25,8 +25,8 @@ export function aiWithBall(
     return;
   }
 
-  // 골키퍼는 높은 확률로 패스 선택
-  if (player.role === 'goalkeeper' && Math.random() < 0.85) {
+  // 골키퍼는 높은 확률로 패스 선택. vision 능력치의 영향을 받음.
+  if (player.role === 'goalkeeper' && Math.random() < 0.05 + (stats.vision / 100) * 0.01) {
     attemptPass(ctx, player);
     return;
   }
