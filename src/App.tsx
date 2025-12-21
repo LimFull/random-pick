@@ -117,7 +117,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🎯 돌림판 당첨자 선정</h1>
+        <h1>🎯 랜덤픽</h1>
       </header>
 
       {/* 탭 네비게이션 */}
@@ -133,7 +133,7 @@ function App() {
           onClick={() => setCurrentView('roulette')}
           disabled={participants.length === 0}
         >
-          🎰 돌림판
+          🎡 돌림판
         </button>
         <button
           className={`nav-button ${currentView === 'horseRace' ? 'active' : ''}`}
