@@ -156,7 +156,7 @@ export function defendingAI(
       targetX = Phaser.Math.Clamp(targetX, 30, ctx.fieldWidth - 30);
     }
 
-    moveToward(player, targetX, targetY, stats.speed * 0.8);
+    moveToward(player, targetX, targetY, stats.speed * 1);
   }
 }
 
