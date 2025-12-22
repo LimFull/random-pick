@@ -18,11 +18,12 @@
 
   &.full-screen {
     position: fixed;
-    height:100dvh;
-    min-height:100dvh;
+    height:calc(100dvh - env(safe-area-inset-top));
+    min-height:calc(100dvh - env(safe-area-inset-top));
     top:env(safe-area-inset-top);
     left:0;
     right:0;
+    bottom: env(safe-area-inset-bottom);
   }
 }
 
