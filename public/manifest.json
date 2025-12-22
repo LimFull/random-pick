@@ -2,14 +2,14 @@
   "name": "랜덤픽",
   "short_name": "랜덤픽",
   "description": "당첨자는 누가될까요?",
-  "start_url": "/random-pick/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4a90e2",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/random-pick/icon-placeholder.svg",
+      "src": "./icon-placeholder.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
