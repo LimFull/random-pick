@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import './HorseRace.css';
 import { mapRange, shuffleArray } from '../utils/calc';
+import { horseImages } from '../assets/horseImages';
 import type { Participant } from '../types/participant';
 import type { RaceResult, GameState } from '../types/game';
 
@@ -71,30 +72,23 @@ export function HorseRace({ participants, onRaceComplete }: HorseRaceProps) {
     }
 
     preload() {
-      // 말 스프라이트 이미지 로드 (tile000.png ~ tile011.png)
-      // Vite의 BASE_URL을 사용하여 GitHub Pages 서브 디렉토리 배포 지원
-      const baseUrl = import.meta.env.BASE_URL;
-      for (let i = 0; i < 12; i++) {
-        const num = String(i).padStart(3, '0');
-        // BASE_URL을 사용하여 상대 경로 구성 (프로덕션: /random-pick/, 개발: /)
-        const imagePath = `${baseUrl}images/horse/tile${num}.png`;
-        console.log(`Loading image: ${imagePath}`); // 디버깅용
-        
-        // 이미지 로드 실패 시 에러 처리
-        // 픽셀 아트 모드로 로드하여 선명도 유지
-        this.load.image(`horse-tile-${i}`, imagePath);
-        this.load.on(`filecomplete-image-horse-tile-${i}`, () => {
-          console.log(`Image loaded: horse-tile-${i}`);
-          // 픽셀 아트 모드 설정으로 선명한 렌더링
+      // 말 스프라이트 이미지 로드 (base64 인라인 이미지 사용)
+      // file:// 프로토콜에서도 작동하도록 base64 데이터 URL 사용
+      for (let i = 0; i < horseImages.length; i++) {
+        const imageKey = `horse-tile-${i}`;
+        // base64 데이터 URL을 load.image에 직접 전달
+        this.load.image(imageKey, horseImages[i]);
+      }
+
+      // 모든 텍스처가 로드된 후 필터 설정
+      this.load.on('complete', () => {
+        for (let i = 0; i < horseImages.length; i++) {
           const texture = this.textures.get(`horse-tile-${i}`);
           if (texture) {
             texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
           }
-        });
-        this.load.on(`loaderror`, (file: Phaser.Loader.File) => {
-          console.error(`Failed to load image: ${file.key} from ${file.src}`);
-        });
-      }
+        }
+      });
     }
 
     init(data?: HorseRaceSceneData) {

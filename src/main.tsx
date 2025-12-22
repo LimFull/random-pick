@@ -1,13 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { HashRouter, BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
+
+// file:// 프로토콜에서는 HashRouter 사용 (URL에 # 사용)
+// 일반 웹 서버에서는 BrowserRouter 사용
+const isFileProtocol = window.location.protocol === 'file:';
+const Router = isFileProtocol ? HashRouter : BrowserRouter;
+const basename = isFileProtocol ? '' : (import.meta.env.BASE_URL || '/');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
+    <Router basename={basename}>
       <App />
-    </BrowserRouter>
+    </Router>
   </StrictMode>,
 )
 
