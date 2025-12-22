@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { SoccerGame } from './SoccerGame';
+import { useNavigate } from 'react-router-dom';
 import type { Participant } from '../types/participant';
 import type { Team, TeamAssignment, SoccerPlayer, SoccerSetup } from '../types/soccer';
 import { generateRandomStats } from '../types/soccer';
@@ -11,8 +11,7 @@ interface SoccerTeamSetupProps {
 }
 
 export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
-  // 게임 상태: 'setup' | 'playing'
-  const [gameState, setGameState] = useState<'setup' | 'playing'>('setup');
+  const navigate = useNavigate();
 
   // 팀 할당 상태 (진입 시 랜덤 초기화)
   const [teamAssignments, setTeamAssignments] = useState<TeamAssignment[]>(() => {
@@ -28,9 +27,6 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
 
   // AI 골키퍼 사용 여부
   const [useAIGoalkeeper, setUseAIGoalkeeper] = useState(true);
-
-  // 게임 설정
-  const [soccerSetup, setSoccerSetup] = useState<SoccerSetup | null>(null);
 
   // 팀별 참가자 분류
   const redTeamMembers = useMemo(() =>
@@ -137,20 +133,10 @@ export function SoccerTeamSetup({ participants }: SoccerTeamSetupProps) {
       useAIGoalkeeper,
     };
 
-    setSoccerSetup(setup);
-    setGameState('playing');
+    // localStorage에 설정 저장 후 게임 화면으로 이동
+    localStorage.setItem('soccerSetup', JSON.stringify(setup));
+    navigate('/soccer-playing');
   };
-
-  // 게임 종료 핸들러 (설정 화면으로 돌아가기)
-  const handleGameEnd = () => {
-    setGameState('setup');
-    setSoccerSetup(null);
-  };
-
-  // 게임 중일 때
-  if (gameState === 'playing' && soccerSetup) {
-    return <SoccerGame setup={soccerSetup} onGameEnd={handleGameEnd} />;
-  }
 
   // 팀 구성 화면
   return (

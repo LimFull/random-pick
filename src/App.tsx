@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ParticipantList } from './components/ParticipantList';
 import { RouletteWheel } from './components/RouletteWheel';
 import { HorseRace } from './components/HorseRace';
 import { SoccerTeamSetup } from './components/SoccerTeamSetup';
+import { SoccerGame } from './components/SoccerGame';
 import { WinnerDisplay } from './components/WinnerDisplay';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { normalizeParticipants, assignColorToNewParticipant } from './utils/colorAssignment';
@@ -114,6 +116,111 @@ function App() {
     setRankings([]);
   };
 
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isRoulettePage = location.pathname === '/roulette';
+  const isHorseRacePage = location.pathname === '/horserace';
+  const isSoccerPage = location.pathname === '/soccer';
+  const isSoccerPlayingPage = location.pathname === '/soccer-playing';
+
+  // /roulette 경로일 때는 돌림판 화면으로 렌더링
+  if (isRoulettePage) {
+    return (
+      <div className="app roulette-standalone">
+        <main className="app-main roulette-view">
+          <div className="roulette-view-content">
+            {participants.length > 0 ? (
+              <RouletteWheel
+                participants={participants}
+                onSpinComplete={handleSpinComplete}
+                isSpinning={isSpinning}
+                setIsSpinning={setIsSpinning}
+              />
+            ) : (
+              <div className="empty-state">
+                <p>⚠️ 참가자가 없습니다.</p>
+                <p>메인 페이지에서 참가자를 먼저 추가해주세요.</p>
+              </div>
+            )}
+          </div>
+        </main>
+        {winner && (
+          <WinnerDisplay winner={winner} rankings={rankings} onClose={handleCloseWinner} />
+        )}
+      </div>
+    );
+  }
+
+  // /soccer-playing 경로일 때는 게임 화면으로 렌더링
+  if (isSoccerPlayingPage) {
+    const savedSetup = localStorage.getItem('soccerSetup');
+    if (savedSetup) {
+      const setup = JSON.parse(savedSetup);
+      return (
+        <div className="app soccer-standalone">
+          <main className="app-main soccer-view">
+            <div className="soccer-view-content">
+              <SoccerGame
+                setup={setup}
+                onGameEnd={() => navigate(-1)}
+              />
+            </div>
+          </main>
+        </div>
+      );
+    } else {
+      // 설정이 없으면 /soccer로 리다이렉트
+      navigate('/soccer');
+      return null;
+    }
+  }
+
+  // /soccer 경로일 때는 팀 선택 화면으로 렌더링
+  if (isSoccerPage) {
+    return (
+      <div className="app soccer-standalone">
+        <main className="app-main soccer-view">
+          <div className="soccer-view-content">
+            {participants.length >= 2 ? (
+              <SoccerTeamSetup participants={participants} />
+            ) : (
+              <div className="empty-state">
+                <p>⚠️ 참가자가 2명 이상 필요합니다.</p>
+                <p>메인 페이지에서 참가자를 먼저 추가해주세요.</p>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // /horserace 경로일 때는 전용 페이지로 렌더링
+  if (isHorseRacePage) {
+    return (
+      <div className="app horse-race-standalone">
+        <main className="app-main horse-race-view">
+          <div className="horse-race-view-content">
+            {participants.length > 0 ? (
+              <HorseRace
+                participants={participants}
+                onRaceComplete={handleSpinComplete}
+              />
+            ) : (
+              <div className="empty-state">
+                <p>⚠️ 참가자가 없습니다.</p>
+                <p>메인 페이지에서 참가자를 먼저 추가해주세요.</p>
+              </div>
+            )}
+          </div>
+        </main>
+        {winner && (
+          <WinnerDisplay winner={winner} rankings={rankings} onClose={handleCloseWinner} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -129,22 +236,22 @@ function App() {
           👥 참가 인원 관리
         </button>
         <button
-          className={`nav-button ${currentView === 'roulette' ? 'active' : ''}`}
-          onClick={() => setCurrentView('roulette')}
+          className="nav-button"
+          onClick={() => navigate('/roulette')}
           disabled={participants.length === 0}
         >
           🎡 돌림판
         </button>
         <button
-          className={`nav-button ${currentView === 'horseRace' ? 'active' : ''}`}
-          onClick={() => setCurrentView('horseRace')}
+          className="nav-button"
+          onClick={() => navigate('/horserace')}
           disabled={participants.length === 0}
         >
           🐎 경마
         </button>
         <button
-          className={`nav-button ${currentView === 'soccer' ? 'active' : ''}`}
-          onClick={() => setCurrentView('soccer')}
+          className="nav-button"
+          onClick={() => navigate('/soccer')}
           disabled={participants.length < 2}
         >
           ⚽ 축구
