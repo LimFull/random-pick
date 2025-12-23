@@ -1,288 +1,133 @@
-@import 'tailwindcss';
-
+/* 기본 스타일 */
 * {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: #000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f5f5f5;
+  color: #333;
   min-height: 100vh;
-  overflow-x: hidden;
-  /* 노치 영역은 검은색으로 유지하여 시스템 UI와 자연스럽게 통합 */
 }
 
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 0;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-  max-width: 100%;
-  margin: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
+/* 헤더 */
 .app-header {
-  text-align: center;
+  background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
   color: white;
-  padding: 20px 20px 0;
-  background: rgba(0, 0, 0, 0.1);
+  padding: 1rem;
+  text-align: center;
 }
 
 .app-header h1 {
-  font-size: 2.5rem;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
 }
 
-
+/* 네비게이션 */
 .app-nav {
   display: flex;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.1);
-  overflow-x: auto;
-  flex-wrap: nowrap;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  justify-content: center;
+  gap: 1rem;
 }
 
-.app-nav::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-}
-
-/* 화면이 충분히 넓을 때는 중앙 정렬 */
-@media (min-width: 600px) {
-  .app-nav {
-    justify-content: center;
-  }
-}
-
-.nav-button {
-  padding: 12px 24px;
-  font-size: 1rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.2);
+.nav-link {
   color: white;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s;
-  flex-shrink: 0;
-  white-space: nowrap;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
 }
 
-.nav-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-2px);
+.nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
-.nav-button.active {
-  background: white;
-  color: #667eea;
-  border-color: white;
+.nav-link.active {
+  background-color: rgba(255, 255, 255, 0.3);
+  font-weight: bold;
 }
 
-.nav-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
+/* 메인 콘텐츠 */
 .app-main {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.app-main.roulette-view {
-  padding: 0;
-  overflow: hidden;
-  height: calc(100vh - 200px);
-  min-height: calc(100vh - 200px);
-}
-
-.app-main.horse-race-view {
-  padding: 0;
-  overflow: hidden;
-  height: calc(100vh - 200px);
-  min-height: calc(100vh - 200px);
-  position: relative;
-}
-
-.app-main.soccer-view {
-  padding: 0;
-  overflow: hidden;
-  height: calc(100vh - 200px);
-  min-height: calc(100vh - 200px);
-  position: relative;
-}
-
-.participants-view {
-  width: 100%;
+  padding: 2rem;
   max-width: 800px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.roulette-view-content {
+  margin: 0 auto;
   width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
 }
 
-.horse-race-view-content {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  overflow: hidden;
-}
-
-.soccer-view-content {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-end;
-  overflow: hidden;
-}
-
-.empty-state {
+/* 페이지 공통 스타일 */
+.page {
   background: white;
-  border-radius: 12px;
-  padding: 40px;
-  text-align: center;
-  color: #666;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  max-width: 500px;
-}
-
-.empty-state p {
-  margin-bottom: 10px;
-}
-
-.view-hint {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  padding: 20px;
-  text-align: center;
-  color: white;
-  margin-top: 20px;
-}
-
-.view-hint p {
-  margin-bottom: 8px;
-}
-
-.btn-go-to-participants {
-  margin-top: 20px;
-  padding: 12px 24px;
-  font-size: 1rem;
-  font-weight: 600;
-  background: white;
-  color: #667eea;
-  border: none;
   border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.btn-go-to-participants:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+.page h2 {
+  color: #4A90E2;
+  margin-bottom: 1rem;
 }
 
-.app-footer {
+.page p {
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+/* 이미지 예제 스타일 */
+.image-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.image-item {
   text-align: center;
-  color: white;
-  opacity: 0.8;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.1);
 }
 
-.app-footer code {
-  background: rgba(255, 255, 255, 0.2);
-  padding: 2px 8px;
+.image-item img {
+  max-width: 100%;
+  height: auto;
   border-radius: 4px;
-  font-size: 0.9rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-@media (max-width: 768px) {
-  .app-header {
-    padding: 15px 15px 0;
-  }
+.image-item p {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #666;
+}
 
-  .app-header h1 {
-    font-size: 2rem;
-  }
+/* 코드 블록 스타일 */
+.code-block {
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
 
+.code-block code {
+  font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+  font-size: 0.9rem;
+  color: #333;
+}
 
-  .app-nav {
-    padding: 15px;
-    gap: 8px;
-  }
-
-  .nav-button {
-    padding: 10px 16px;
-    font-size: 0.9rem;
-  }
-
-  .app-main {
-    padding: 15px;
-  }
-
-  .app-main.roulette-view {
-    height: calc(100vh - 180px);
-    min-height: calc(100vh - 180px);
-  }
-
-  .app-main.horse-race-view {
-    padding: 0;
-    overflow: visible;
-    height: auto;
-    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 180px);
-  }
-
-  /* 모바일에서 경마 뷰일 때 전체 페이지가 스크롤 가능하도록 */
-  .app-main.horse-race-view .horse-race-view-content {
-    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    display: flex;
-    flex-direction: column;
-  }
-
-  .app-main.soccer-view {
-    padding: 0;
-    overflow: visible;
-    height: auto;
-    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 180px);
-  }
-
-  .app-main.soccer-view .soccer-view-content {
-    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    display: flex;
-    flex-direction: column;
-  }
+/* 푸터 */
+.app-footer {
+  background: #333;
+  color: #999;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.9rem;
 }
