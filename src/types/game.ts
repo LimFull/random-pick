@@ -30,3 +30,4 @@ export interface RaceResult {
  * 경마 결과 또는 돌림판 결과를 받을 수 있음
  */
 export type SpinCompleteResult = string | Participant | RaceResult;
+

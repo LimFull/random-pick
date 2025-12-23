@@ -118,7 +118,7 @@ function App() {
   };
 
   const handleSelectGame = (game: string) => {
-    console.log(game);
+    navigate(game);
   };
 
   const location = useLocation();
@@ -289,3 +289,4 @@ function App() {
 }
 
 export default App;
+

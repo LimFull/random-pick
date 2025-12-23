@@ -105,3 +105,4 @@ export function ParticipantList({ participants, onAdd, onRemove, onClear, onShuf
     </div>
   );
 }
+

@@ -135,3 +135,4 @@ export function assignColorToNewParticipant(existingParticipants: Participant[])
 export function getColorPalette(): readonly string[] {
   return [...COLOR_PALETTE];
 }
+

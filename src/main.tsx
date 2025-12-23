@@ -65,3 +65,4 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     }, 60000); // 1분마다 확인
   });
 }
+

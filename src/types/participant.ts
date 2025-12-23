@@ -19,3 +19,4 @@ export type ParticipantInput = string | Participant;
  * 참가자 배열 타입
  */
 export type ParticipantArray = Participant[];
+

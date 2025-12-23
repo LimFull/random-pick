@@ -89,3 +89,4 @@ export function calculateProbabilities(participants: string[]): Record<string, s
   
   return result;
 }
+

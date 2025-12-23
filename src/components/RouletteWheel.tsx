@@ -274,3 +274,4 @@ export function RouletteWheel({ participants, onSpinComplete, isSpinning, setIsS
     </div>
   );
 }
+
