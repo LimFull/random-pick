@@ -13,6 +13,7 @@ import type { Participant } from './types/participant';
 import type { ViewType } from './types/common';
 import type { SpinCompleteResult, RaceResult, Ranking } from './types/game';
 import type { SoccerResult } from './types/soccer';
+import { GameSelector } from './components/GameSelector';
 
 function App() {
   const [participantsRaw, setParticipantsRaw] = useLocalStorage<Array<{ name: string; color: string }>>('participants', []);
@@ -114,6 +115,10 @@ function App() {
   const handleCloseWinner = () => {
     setWinner(null);
     setRankings([]);
+  };
+
+  const handleSelectGame = (game: string) => {
+    console.log(game);
   };
 
   const location = useLocation();
@@ -268,81 +273,11 @@ function App() {
               onClear={handleClearParticipants}
               onShuffle={handleShuffleColors}
             />
-            {participants.length > 0 && (
-              <div className="view-hint">
-                <p>✅ 참가자가 추가되었습니다!</p>
-                <p>위의 "돌림판" 또는 "경마" 탭을 클릭하여 게임을 시작해보세요.</p>
-              </div>
-            )}
+            <GameSelector participants={participants} onSelect={handleSelectGame} />
           </div>
         )}
 
-        {currentView === 'roulette' && (
-          <div className="roulette-view-content">
-            {participants.length > 0 ? (
-              <RouletteWheel
-                participants={participants}
-                onSpinComplete={handleSpinComplete}
-                isSpinning={isSpinning}
-                setIsSpinning={setIsSpinning}
-              />
-            ) : (
-              <div className="empty-state">
-                <p>⚠️ 참가자가 없습니다.</p>
-                <p>먼저 "참가 인원 관리" 탭에서 참가자를 추가해주세요.</p>
-                <button
-                  className="btn-go-to-participants"
-                  onClick={() => setCurrentView('participants')}
-                >
-                  참가 인원 관리로 이동
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
-        {currentView === 'horseRace' && (
-          <div className="horse-race-view-content">
-            {participants.length > 0 ? (
-              <HorseRace
-                participants={participants}
-                onRaceComplete={handleSpinComplete}
-              />
-            ) : (
-              <div className="empty-state">
-                <p>⚠️ 참가자가 없습니다.</p>
-                <p>먼저 "참가 인원 관리" 탭에서 참가자를 추가해주세요.</p>
-                <button
-                  className="btn-go-to-participants"
-                  onClick={() => setCurrentView('participants')}
-                >
-                  참가 인원 관리로 이동
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {currentView === 'soccer' && (
-          <div className="soccer-view-content">
-            {participants.length >= 2 ? (
-              <SoccerTeamSetup
-                participants={participants}
-              />
-            ) : (
-              <div className="empty-state">
-                <p>⚠️ 참가자가 2명 이상 필요합니다.</p>
-                <p>먼저 "참가 인원 관리" 탭에서 참가자를 추가해주세요.</p>
-                <button
-                  className="btn-go-to-participants"
-                  onClick={() => setCurrentView('participants')}
-                >
-                  참가 인원 관리로 이동
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </main>
 
       {winner && (
