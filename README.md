@@ -58,7 +58,7 @@ import logo from '../assets/logo.png';
 <img src={logo} alt="Logo" />
 ```
 
-Vite가 자동으로 작은 이미지는 base64로 인라인화하고, 큰 이미지는 별도 파일로 처리합니다.
+`vite-plugin-singlefile`을 사용하기 때문에 **이미지 크기와 관계없이 모두 base64로 인라인화**됩니다.
 
 ---
 
@@ -140,7 +140,29 @@ npm run build
 cp dist/index.html ../my-rn-app/assets/webview.html
 ```
 
-### 2. React Native에서 로드
+### 2. Expo 프로젝트 (권장)
+
+Expo에서는 별도의 네이티브 설정 없이 바로 사용할 수 있습니다.
+
+```tsx
+import { WebView } from 'react-native-webview';
+
+// assets 폴더에 webview.html을 넣고 require로 로드
+const htmlSource = require('./assets/webview.html');
+
+function MyWebView() {
+  return (
+    <WebView
+      source={htmlSource}
+      originWhitelist={['*']}
+    />
+  );
+}
+```
+
+### 3. Bare React Native 프로젝트
+
+Expo 없이 순수 React Native를 사용하는 경우, 플랫폼별 설정이 필요합니다.
 
 ```tsx
 import { WebView } from 'react-native-webview';
@@ -162,13 +184,13 @@ function MyWebView() {
 }
 ```
 
-### iOS 설정 (Xcode)
+#### iOS 설정 (Xcode) - Bare RN만 해당
 
 1. `webview.html`을 Xcode 프로젝트에 드래그하여 추가
 2. "Copy items if needed" 체크
 3. Target Membership 확인
 
-### Android 설정
+#### Android 설정 - Bare RN만 해당
 
 1. `android/app/src/main/assets/` 폴더 생성 (없는 경우)
 2. `webview.html`을 해당 폴더에 복사
